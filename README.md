@@ -1,6 +1,7 @@
 # Rox
 
-**TODO: Add description**
+Elixir wrapper around
+[leo-project/erocksdb](https://github.com/leo-project/erocksdb)
 
 ## Installation
 
@@ -13,12 +14,3 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
       [{:rox, "~> 0.1.0"}]
     end
     ```
-
-  2. Ensure `rox` is started before your application:
-
-    ```elixir
-    def application do
-      [applications: [:rox]]
-    end
-    ```
-

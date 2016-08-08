@@ -27,6 +27,8 @@ defmodule Rox.Mixfile do
   #
   # Type "mix help deps" for more examples and options
   defp deps do
-    []
+    [
+      {:erocksdb, "~> 0.4.1"}
+    ]
   end
 end
