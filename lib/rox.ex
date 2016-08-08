@@ -4,6 +4,9 @@ defmodule Rox do
   @type compaction_style :: :level | :universal | :fifo | :none
   @type compression_type :: :snappy | :zlib | :bzip2 | :lz4 | :lz4h | :none
 
+  @type key :: String.t | binary
+  @type value :: String.t | binary
+
   @type db_handle :: binary
   @type cf_handle :: binary
   @type itr_handle :: binary
@@ -122,23 +125,47 @@ defmodule Rox do
   ]
 
   @type write_actions :: [
-    {:put, key :: binary, value :: binary} |
-    {:put, cf_handle, key :: binary, value :: binary} |
-    {:delete, key :: binary} |
-    {:delete, cf_handle, key :: binary} |
+    {:put, key, value} |
+    {:put, cf_handle, key, value} |
+    {:delete, key} |
+    {:delete, cf_handle, key} |
     :clear
   ]
 
   @type iterator_action :: :first | :last | :next | :prev | binary
 
   @doc """
-  Open a RocksDB with the specified read options
+  Open a RocksDB with the specified read options and column family options
   """
 
   @spec open(path :: file_path, db_opts :: db_options, cf_opts :: cf_options) :: {:ok, db_handle} | {:error, any}
   def open(path, db_opts \\ [], cf_opts \\ []) do
     :erocksdb.open(to_charlist(path), sanitize_opts(db_opts), sanitize_opts(cf_opts))
   end
+
+  @doc """
+  Put a key/value pair into the default column family handle
+  """
+
+  @spec put(db_handle, key, value) :: :ok | {:error, any}
+  def put(db, key, value), do:
+    :erocksdb.put(db, key, value, [])
+
+  @doc """
+  Put a key/value pair into the default column family handle with the provided
+  write options
+  """
+
+  @spec put(db_handle, key, value, write_options) :: :ok | {:error, any}
+  def put(db, key, value, write_opts) when is_list(write_opts), do:
+    :erocksdb.put(db, key, value, write_opts)
+
+  @doc """
+  Put a key/value pair into the specified column family with optional `write_options`
+  """
+  @spec put(db_handle, cf_handle, key, value, write_options) :: :ok | {:error, any}
+  def put(db, cf, key, value, write_opts \\ []), do:
+    :erocksdb.put(db, cf, key, value, write_opts)
 
   defp sanitize_opts(opts) do
     [ raw, rest ] = Keyword.split(opts, @opts_to_convert_to_bitlists)
