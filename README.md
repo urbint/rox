@@ -14,3 +14,9 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
       [{:rox, "~> 0.1.0"}]
     end
     ```
+
+## Features
+
+  * String friendly wrapping around erlang char lists
+  * Auto encoding of non-binary types (tuples, maps, lists, etc) via
+      `:erlang.term_to_binary/1`. (Use `decode: true` on `get`)

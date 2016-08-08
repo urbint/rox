@@ -144,12 +144,23 @@ defmodule Rox do
   end
 
   @doc """
+  Close the RocksDB with the specifed `db_handle`
+  """
+
+  @spec close(db_handle) :: :ok | {:error, any}
+  def close(db), do:
+    :erocksdb.close(db)
+
+  @doc """
   Put a key/value pair into the default column family handle
   """
 
   @spec put(db_handle, key, value) :: :ok | {:error, any}
-  def put(db, key, value), do:
+  def put(db, key, value) when is_binary(value), do:
     :erocksdb.put(db, key, value, [])
+
+  def put(db, key, value), do:
+    :erocksdb.put(db, key, :erlang.term_to_binary(value), [])
 
   @doc """
   Put a key/value pair into the default column family handle with the provided
@@ -157,15 +168,22 @@ defmodule Rox do
   """
 
   @spec put(db_handle, key, value, write_options) :: :ok | {:error, any}
-  def put(db, key, value, write_opts) when is_list(write_opts), do:
+  def put(db, key, value, write_opts) when is_list(write_opts) and is_binary(value), do:
     :erocksdb.put(db, key, value, write_opts)
+
+  def put(db, key, value, write_opts) when is_list(write_opts), do:
+    :erocksdb.put(db, key, :erlang.term_to_binary(value), write_opts)
 
   @doc """
   Put a key/value pair into the specified column family with optional `write_options`
   """
   @spec put(db_handle, cf_handle, key, value, write_options) :: :ok | {:error, any}
-  def put(db, cf, key, value, write_opts \\ []), do:
+  def put(db, cf, key, value, write_opts \\ [])
+  def put(db, cf, key, value, write_opts) when is_binary(value), do:
     :erocksdb.put(db, cf, key, value, write_opts)
+
+  def put(db, cf, key, value, write_opts), do:
+    :erocksdb.put(db, cf, key, :erlang.term_to_binary(value), write_opts)
 
   defp sanitize_opts(opts) do
     [ raw, rest ] = Keyword.split(opts, @opts_to_convert_to_bitlists)
