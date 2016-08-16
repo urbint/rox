@@ -218,7 +218,7 @@ defmodule Rox do
         {:ok, key} -> {[key], {iter, :next}}
         {:error, :invalid_iterator} -> {:halt, iter}
       end
-    end, fn {iter,_} ->
+    end, fn iter ->
       :erocksdb.iterator_close(iter)
     end)
   end
