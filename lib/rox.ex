@@ -247,7 +247,7 @@ defmodule Rox do
     Stream.resource(fn ->
       {:ok, iter } = :erocksdb.iterator(db, read_opts)
       {iter, :first}
-    end, scan_or_decode, fn {iter,_} ->
+    end, scan_or_decode, fn iter ->
       :erocksdb.iterator_close(iter)
     end)
   end

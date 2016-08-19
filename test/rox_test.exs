@@ -30,4 +30,13 @@ defmodule RoxTest do
 
     assert count == 1
   end
+
+  test "stream", %{db: db} do
+    :ok = Rox.put(db, "key", "val")
+
+    count = Rox.stream(db)
+    |> Enum.count
+
+    assert count == 1
+  end
 end
