@@ -39,4 +39,11 @@ defmodule RoxTest do
 
     assert count == 1
   end
+
+  test "partial exhaustion of a stream", %{db: db} do
+    :ok = Rox.put(db, "key", "val")
+    :ok = Rox.put(db, "alt-key", "val")
+
+    Rox.stream_keys(db) |> Enum.take(1)
+  end
 end

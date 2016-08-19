@@ -63,10 +63,10 @@ defmodule Rox do
   @type db_path :: {:db_path, name :: String.t, options :: cf_options}
   @type cf_descriptor :: {:cf_descriptor, name :: String.t, options :: cf_options}
   @type access_hint :: :normal | :sequential | :willneed | :none
-  @type wal_recovery_mode :: 
-    :tolerate_corrupted_tail_records | 
-    :absolute_consistency | 
-    :point_in_time_recovery | 
+  @type wal_recovery_mode ::
+    :tolerate_corrupted_tail_records |
+    :absolute_consistency |
+    :point_in_time_recovery |
     :skip_any_corrupted_records
 
   @type db_options :: [
@@ -216,25 +216,25 @@ defmodule Rox do
     end, fn {iter, dir} ->
       case :erocksdb.iterator_move(iter, dir) do
         {:ok, key} -> {[key], {iter, :next}}
-        {:error, :invalid_iterator} -> {:halt, iter}
+        {:error, :invalid_iterator} -> {:halt, {iter, :done}}
       end
-    end, fn iter ->
+    end, fn {iter, _dir} ->
       :erocksdb.iterator_close(iter)
     end)
   end
 
   def stream(db, read_opts \\ []) do
     {auto_decode, read_opts } = Keyword.pop(read_opts, :decode)
-    
+
     scan = fn {iter, dir} ->
       case :erocksdb.iterator_move(iter, dir) do
         {:ok, key, val} -> {[{key, val}], {iter, :next}}
-        {:error, :invalid_iterator} -> {:halt, iter}
+        {:error, :invalid_iterator} -> {:halt, {iter, :done}}
       end
     end
 
     scan_or_decode = if auto_decode do
-      fn arg -> 
+      fn arg ->
         with {[{key, val}], acc } <-scan.(arg) do
           val = :erlang.binary_to_term(val)
           {[{key, val}], acc}
@@ -247,7 +247,7 @@ defmodule Rox do
     Stream.resource(fn ->
       {:ok, iter } = :erocksdb.iterator(db, read_opts)
       {iter, :first}
-    end, scan_or_decode, fn iter ->
+    end, scan_or_decode, fn {iter, _dir} ->
       :erocksdb.iterator_close(iter)
     end)
   end
