@@ -7,10 +7,9 @@ defmodule Rox do
   @type key :: String.t | binary
   @type value :: any
 
-  @type db_handle :: binary
-  @type cf_handle :: binary
-  @type itr_handle :: binary
-  @type snapshot_handle :: binary
+  @opaque db_handle :: :erocksdb.db_handle
+  @opaque cf_handle :: :erocksdb.cf_handle
+  @opaque snapshot_handle :: :erocksdb.snapshot_handle
 
   @type file_path :: String.t
 
@@ -208,7 +207,7 @@ defmodule Rox do
   Creates an Elixir stream of the keys within the `db_handle`.
   """
 
-  @spec stream_keys(db_handle, read_options) :: Stream.t
+  @spec stream_keys(db_handle, read_options) :: Enumerable.t
   def stream_keys(db, read_opts \\ []) do
     Stream.resource(fn ->
       {:ok, iter } = :erocksdb.iterator(db, read_opts, :keys_only)
