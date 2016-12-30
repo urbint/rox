@@ -1,4 +1,9 @@
 defmodule Rox do
+  @moduledoc """
+  Elixir wrapper for RocksDB.
+
+  """
+
   @opts_to_convert_to_bitlists [:db_log_dir, :wal_dir]
 
   @type compaction_style :: :level | :universal | :fifo | :none
@@ -136,25 +141,27 @@ defmodule Rox do
 
   @doc """
   Open a RocksDB with the specified database options and column family options
-  """
 
+  """
   @spec open(path :: file_path, db_opts :: db_options, cf_opts :: cf_options) :: {:ok, db_handle} | {:error, any}
   def open(path, db_opts \\ [], cf_opts \\ []) do
     :erocksdb.open(to_charlist(path), sanitize_opts(db_opts), sanitize_opts(cf_opts))
   end
 
+
   @doc """
   Close the RocksDB with the specifed `db_handle`
-  """
 
+  """
   @spec close(db_handle) :: :ok | {:error, any}
   def close(db), do:
     :erocksdb.close(db)
 
+
   @doc """
   Put a key/value pair into the default column family handle
-  """
 
+  """
   @spec put(db_handle, key, value) :: :ok | {:error, any}
   def put(db, key, value) when is_binary(value), do:
     :erocksdb.put(db, key, value, [])
@@ -162,11 +169,12 @@ defmodule Rox do
   def put(db, key, value), do:
     :erocksdb.put(db, key, :erlang.term_to_binary(value), [])
 
+
   @doc """
   Put a key/value pair into the default column family handle with the provided
   write options
-  """
 
+  """
   @spec put(db_handle, key, value, write_options) :: :ok | {:error, any}
   def put(db, key, value, write_opts) when is_list(write_opts) and is_binary(value), do:
     :erocksdb.put(db, key, value, write_opts)
@@ -174,27 +182,30 @@ defmodule Rox do
   def put(db, key, value, write_opts) when is_list(write_opts), do:
     :erocksdb.put(db, key, :erlang.term_to_binary(value), write_opts)
 
+
   @doc """
   Put a key/value pair into the specified column family with optional `write_options`
+
   """
   @spec put(db_handle, cf_handle, key, value, write_options) :: :ok | {:error, any}
   def put(db, cf, key, value, write_opts \\ [])
+
   def put(db, cf, key, value, write_opts) when is_binary(value), do:
     :erocksdb.put(db, cf, key, value, write_opts)
 
   def put(db, cf, key, value, write_opts), do:
     :erocksdb.put(db, cf, key, :erlang.term_to_binary(value), write_opts)
 
+
   @doc """
   Retrieve a key/value pair in the default column family
 
   For non binary terms, you may use `decode: true` to automatically decode the binary back into the term.
   """
-
   @spec get(db_handle, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
   def get(db, key, read_opts \\ []) do
-    { auto_decode, read_opts } = Keyword.pop(read_opts, :decode)
-    with {:ok, val } <- :erocksdb.get(db, key, read_opts) do
+    {auto_decode, read_opts} = Keyword.pop(read_opts, :decode)
+    with {:ok, val} <- :erocksdb.get(db, key, read_opts) do
       if auto_decode do
         {:ok, :erlang.binary_to_term(val)}
       else
@@ -203,14 +214,17 @@ defmodule Rox do
     end
   end
 
+
   @doc """
   Creates an Elixir stream of the keys within the `db_handle`.
-  """
 
+  """
   @spec stream_keys(db_handle, read_options) :: Enumerable.t
   def stream_keys(db, read_opts \\ []) do
     Stream.resource(fn ->
-      {:ok, iter } = :erocksdb.iterator(db, read_opts, :keys_only)
+      {:ok, iter} =
+        :erocksdb.iterator(db, read_opts, :keys_only)
+
       {iter, :first}
     end, fn {iter, dir} ->
       case :erocksdb.iterator_move(iter, dir) do
@@ -223,7 +237,8 @@ defmodule Rox do
   end
 
   def stream(db, read_opts \\ []) do
-    {auto_decode, read_opts } = Keyword.pop(read_opts, :decode)
+    {auto_decode, read_opts} =
+      Keyword.pop(read_opts, :decode)
 
     scan = fn {iter, dir} ->
       case :erocksdb.iterator_move(iter, dir) do
@@ -234,7 +249,7 @@ defmodule Rox do
 
     scan_or_decode = if auto_decode do
       fn arg ->
-        with {[{key, val}], acc } <-scan.(arg) do
+        with {[{key, val}], acc} <- scan.(arg) do
           val = :erlang.binary_to_term(val)
           {[{key, val}], acc}
         end
@@ -244,7 +259,8 @@ defmodule Rox do
     end
 
     Stream.resource(fn ->
-      {:ok, iter } = :erocksdb.iterator(db, read_opts)
+      {:ok, iter} =
+        :erocksdb.iterator(db, read_opts)
       {iter, :first}
     end, scan_or_decode, fn {iter, _dir} ->
       :erocksdb.iterator_close(iter)
@@ -252,8 +268,12 @@ defmodule Rox do
   end
 
   defp sanitize_opts(opts) do
-    { raw, rest } = Keyword.split(opts, @opts_to_convert_to_bitlists)
-    converted = Enum.map(raw, fn {k, val} -> {k, to_charlist(val)} end)
+    {raw, rest} =
+      Keyword.split(opts, @opts_to_convert_to_bitlists)
+
+    converted =
+      Enum.map(raw, fn {k, val} -> {k, to_charlist(val)} end)
+
     Keyword.merge(rest, converted)
   end
 end
