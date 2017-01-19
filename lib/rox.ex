@@ -143,7 +143,7 @@ defmodule Rox do
   Open a RocksDB with the specified database options and column family options
 
   """
-  @spec open(path :: file_path, db_opts :: db_options, cf_opts :: cf_options) :: {:ok, db_handle} | {:error, any}
+  @spec open(file_path, db_options, cf_options) :: {:ok, db_handle} | {:error, any}
   def open(path, db_opts \\ [], cf_opts \\ []) do
     :erocksdb.open(to_charlist(path), sanitize_opts(db_opts), sanitize_opts(cf_opts))
   end
