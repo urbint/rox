@@ -276,4 +276,16 @@ defmodule Rox do
 
     Keyword.merge(rest, converted)
   end
+
+
+  @doc """
+  Return the approximate number of keys in the default column family.
+
+  Implemented by calling GetIntProperty with `rocksdb.estimate-num-keys`
+
+  """
+  @spec count(db_handle) :: non_neg_integer | {:error, any}
+  def count(db) do
+    :erocksdb.count(db)
+  end
 end

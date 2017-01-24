@@ -46,4 +46,12 @@ defmodule RoxTest do
 
     Rox.stream_keys(db) |> Enum.take(1)
   end
+
+  test "count", %{db: db} do
+    count =
+      Rox.count(db)
+
+    assert is_number(count)
+    assert count >= 0
+  end
 end
