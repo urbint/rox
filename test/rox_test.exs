@@ -22,6 +22,17 @@ defmodule RoxTest do
     assert {:ok, "val"} = Rox.get(db, "key")
   end
 
+  test "delete", %{db: db} do
+    assert :not_found = Rox.get(db, "key")
+    :ok = Rox.put(db, "key", "val")
+
+    assert {:ok, "val"} = Rox.get(db, "key")
+
+    :ok = Rox.delete(db, "key")
+
+    assert :not_found = Rox.get(db, "key")
+  end
+
   test "stream_keys", %{db: db} do
     :ok = Rox.put(db, "key", "val")
 

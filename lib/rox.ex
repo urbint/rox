@@ -157,6 +157,13 @@ defmodule Rox do
   def close(db), do:
     :erocksdb.close(db)
 
+  @doc """
+  Delete a key/value pair from the default column family handle
+
+  """
+  @spec delete(db_handle, key) :: :ok | {:error, any}
+  def delete(db, key), do:
+    :erocksdb.delete(db, key, [])
 
   @doc """
   Put a key/value pair into the default column family handle
