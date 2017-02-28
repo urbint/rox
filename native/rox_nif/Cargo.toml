@@ -1,0 +1,16 @@
+[package]
+name = "rox_nif"
+version = "0.1.0"
+authors = ["Ryan Schmukler <rschmukler@gmail.com>"]
+
+[lib]
+name = "rox_nif"
+path = "src/lib.rs"
+crate-type = ["dylib"]
+
+[dependencies]
+rustler = "^0.13"
+rustler_codegen = "^0.13"
+rocksdb = "^0.6"
+
+lazy_static = "*"

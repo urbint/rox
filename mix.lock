@@ -1,1 +1,2 @@
-%{"erocksdb": {:hex, :erocksdb, "0.4.1", "59a3258b1460d0e64f7575d912d9af86fa5aa56729abff18e4d3e4fd4a5e01e0", [:rebar3], []}}
+%{"erocksdb": {:hex, :erocksdb, "0.4.1", "59a3258b1460d0e64f7575d912d9af86fa5aa56729abff18e4d3e4fd4a5e01e0", [:rebar3], []},
+  "rustler": {:git, "https://github.com/hansihe/rustler.git", "c4edfbeb906df2001b8b71a0e7ac9e200d87dcde", [sparse: "rustler_mix"]}}
