@@ -12,11 +12,11 @@ use std::ops::Deref;
 use rustler::resource::ResourceArc;
 
 use rustler::{
-    NifEnv, NifTerm, NifEncoder, NifResult
+    NifEnv, NifTerm, NifEncoder, NifResult,NifDecoder,NifError
 };
 
 use rocksdb::{
-    DB,IteratorMode, Direction,Options
+    DB,IteratorMode, Direction,Options,DBCompressionType
 };
 
 mod atoms {
@@ -25,6 +25,15 @@ mod atoms {
         atom error;
         // atom nil;
         // atom not_found;
+
+        // Compression Type Atoms
+        atom snappy;
+        atom zlib;
+        atom bzip2;
+        atom lz4;
+        atom lz4h;
+        atom none;
+            
 
         // Block Based Table Option atoms
         // atom no_block_cache;
@@ -71,11 +80,32 @@ mod atoms {
 
         // DB Options
         atom total_threads;
+        atom optimize_level_type_compaction_memtable_memory_budget;
         atom create_if_missing;
-        // atom create_missing_column_families;
-        // atom error_if_exists;
-        // atom paranoid_checks;
-        // atom max_open_files;
+        atom max_open_files;
+        atom compression_type;
+        atom use_fsync;
+        atom bytes_per_sync;
+        atom disable_data_sync;
+        atom allow_os_buffer;
+        atom table_cache_num_shard_bits;
+        atom min_write_buffer_number;
+        atom max_write_buffer_number;
+        atom write_buffer_size;
+        atom max_bytes_for_level_base;
+        atom max_bytes_for_level_multiplier;
+        atom max_manifest_file_size;
+        atom target_file_size_base;
+        atom min_write_buffer_number_to_merge;
+        atom level_zero_file_num_compaction_trigger;
+        atom level_zero_slowdown_writes_trigger;
+        atom level_zero_stop_writes_trigger;
+        atom compaction_style;
+        atom max_background_compactions;
+        atom max_background_flushes;
+        atom disable_auto_compactions;
+        atom report_bg_io_stats;
+        atom num_levels;
         // atom max_total_wal_size;
         // atom disable_data_sync;
         // atom use_fsync;
@@ -128,6 +158,40 @@ struct DBHandle {
     pub db: DB,
 }
 
+enum CompressionType {
+    None,
+    Snappy,
+    Zlib,
+    Bz2,
+    Lz4,
+    Lz4hc,
+}
+
+impl <'a> NifDecoder<'a> for CompressionType {
+    fn decode(term: NifTerm<'a>) -> NifResult<Self> {
+        if atoms::none() == term { Ok(CompressionType::None) }
+        else if atoms::snappy()  == term { Ok(CompressionType::Snappy) }
+        else if atoms::zlib()    == term { Ok(CompressionType::Zlib) }
+        else if atoms::bzip2()   == term { Ok(CompressionType::Bz2) }
+        else if atoms::lz4()     == term { Ok(CompressionType::Lz4) }
+        else if atoms::lz4h()    == term { Ok(CompressionType::Lz4hc) }
+        else { Err(NifError::BadArg) }
+    }
+}
+
+impl Into<DBCompressionType> for CompressionType {
+    fn into(self) -> DBCompressionType {
+        match self {
+            CompressionType::None => DBCompressionType::None,
+            CompressionType::Snappy => DBCompressionType::Snappy,
+            CompressionType::Zlib => DBCompressionType::Zlib,
+            CompressionType::Bz2 => DBCompressionType::Bz2,
+            CompressionType::Lz4 => DBCompressionType::Lz4,
+            CompressionType::Lz4hc => DBCompressionType::Lz4hc,
+        }
+    }
+}
+
 macro_rules! handle_db_error {
     ($env:expr, $e:expr) => {
         match $e {
@@ -144,9 +208,116 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
         opts.increase_parallelism(count.decode()?);
     }
 
+    if let Ok(memtable_budget) = arg.map_get(atoms::optimize_level_type_compaction_memtable_memory_budget().to_term(env)) {
+        let i_size: u64 = memtable_budget.decode()?;
+        opts.optimize_level_style_compaction(i_size as usize);
+    }
+
     if let Ok(create_if_missing) = arg.map_get(atoms::create_if_missing().to_term(env)) {
         opts.create_if_missing(create_if_missing.decode()?);
     }
+
+    if let Ok(compression_type_opt) = arg.map_get(atoms::compression_type().to_term(env)) {
+        let compression_type: CompressionType = compression_type_opt.decode()?;
+        opts.set_compression_type(compression_type.into());
+    }
+
+    // TODO: Set Compression Type Per Level
+
+    if let Ok(max_open_files) = arg.map_get(atoms::max_open_files().to_term(env)) {
+        opts.set_max_open_files(max_open_files.decode()?);
+    }
+
+    if let Ok(use_fsync) = arg.map_get(atoms::use_fsync().to_term(env)) {
+        opts.set_use_fsync(use_fsync.decode()?);
+    }
+
+    if let Ok(bytes_per_sync) = arg.map_get(atoms::bytes_per_sync().to_term(env)) {
+        opts.set_bytes_per_sync(bytes_per_sync.decode()?);
+    }
+
+    if let Ok(disable_sync) = arg.map_get(atoms::disable_data_sync().to_term(env)) {
+        opts.set_disable_data_sync(disable_sync.decode()?);
+    }
+
+    if let Ok(allow_os_buffer) = arg.map_get(atoms::allow_os_buffer().to_term(env)) {
+        opts.set_allow_os_buffer(allow_os_buffer.decode()?);
+    }
+
+    if let Ok(nbits) = arg.map_get(atoms::table_cache_num_shard_bits().to_term(env)) {
+        opts.set_table_cache_num_shard_bits(nbits.decode()?);
+    }
+
+    if let Ok(nbuf) = arg.map_get(atoms::min_write_buffer_number().to_term(env)) {
+        opts.set_min_write_buffer_number(nbuf.decode()?);
+    }
+
+    if let Ok(nbuf) = arg.map_get(atoms::max_write_buffer_number().to_term(env)) {
+        opts.set_max_write_buffer_number(nbuf.decode()?);
+    }
+
+    if let Ok(size) = arg.map_get(atoms::write_buffer_size().to_term(env)) {
+        let i_size: u64 = size.decode()?;
+        opts.set_write_buffer_size(i_size as usize);
+    }
+
+    if let Ok(max_bytes) = arg.map_get(atoms::max_bytes_for_level_base().to_term(env)) {
+        opts.set_max_bytes_for_level_base(max_bytes.decode()?);
+    }
+
+    if let Ok(multiplier) = arg.map_get(atoms::max_bytes_for_level_multiplier().to_term(env)) {
+        opts.set_max_bytes_for_level_multiplier(multiplier.decode()?);
+    }
+
+    if let Ok(max_size) = arg.map_get(atoms::max_manifest_file_size().to_term(env)) {
+        let i_size: u64 = max_size.decode()?;
+        opts.set_max_manifest_file_size(i_size as usize);
+    }
+
+    if let Ok(target_size) = arg.map_get(atoms::target_file_size_base().to_term(env)) {
+        opts.set_target_file_size_base(target_size.decode()?);
+    }
+
+    if let Ok(to_merge) = arg.map_get(atoms::min_write_buffer_number_to_merge().to_term(env)) {
+        opts.set_min_write_buffer_number_to_merge(to_merge.decode()?);
+    }
+
+    if let Ok(n) = arg.map_get(atoms::level_zero_file_num_compaction_trigger().to_term(env)) {
+        opts.set_level_zero_file_num_compaction_trigger(n.decode()?);
+    }
+
+    if let Ok(n) = arg.map_get(atoms::level_zero_slowdown_writes_trigger().to_term(env)) {
+        opts.set_level_zero_slowdown_writes_trigger(n.decode()?);
+    }
+
+    if let Ok(n) = arg.map_get(atoms::level_zero_stop_writes_trigger().to_term(env)) {
+        opts.set_level_zero_stop_writes_trigger(n.decode()?);
+    }
+
+    // Todo set compaction style
+
+    if let Ok(n) = arg.map_get(atoms::max_background_compactions().to_term(env)) {
+        opts.set_max_background_compactions(n.decode()?);
+    }
+
+    if let Ok(n) = arg.map_get(atoms::max_background_flushes().to_term(env)) {
+        opts.set_max_background_flushes(n.decode()?);
+    }
+
+    if let Ok(disable) = arg.map_get(atoms::disable_auto_compactions().to_term(env)) {
+        opts.set_disable_auto_compactions(disable.decode()?);
+    }
+
+    if let Ok(bg_io_stats) = arg.map_get(atoms::report_bg_io_stats().to_term(env)) {
+        opts.set_report_bg_io_stats(bg_io_stats.decode()?);
+    }
+
+    // Todo: set WAL Recovery Mode
+
+    if let Ok(num_levels) = arg.map_get(atoms::num_levels().to_term(env)) {
+        opts.set_num_levels(num_levels.decode()?);
+    }
+
 
     Ok(opts)
 }
@@ -162,8 +333,8 @@ fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
         if !has_db_opts && !has_cf_opts {
           handle_db_error!(env, DB::open_default(path))
         } else if has_db_opts {
-          let opts = decode_db_options(env, args[1])?;
-          handle_db_error!(env, DB::open(&opts, path))
+          let db_opts = decode_db_options(env, args[1])?;
+          handle_db_error!(env, DB::open(&db_opts, path))
         } else {
           handle_db_error!(env, DB::open_default(path))
         };
@@ -185,7 +356,7 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let count = iterator.count();
 
     
-    Ok((count as u32).encode(env))
+    Ok((count as u64).encode(env))
 }
 
 rustler_export_nifs!(

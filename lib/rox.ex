@@ -76,41 +76,32 @@ defmodule Rox do
 
   @type db_options :: [
     {:total_threads, pos_integer} |
+    {:optimize_level_type_compaction_memtable_memory_budget, integer} |
     {:create_if_missing, boolean} |
-    {:create_missing_column_families, boolean} |
-    {:error_if_exists, boolean} |
-    {:paranoid_checks, boolean} |
-    {:max_open_files, integer} |
-    {:max_total_wal_size, non_neg_integer} |
-    {:disable_data_sync, boolean} |
+    {:max_open_files, pos_integer} |
+    {:compression_type, compression_type} |
     {:use_fsync, boolean} |
-    {:db_paths, [db_path]} |
-    {:db_log_dir, file_path} |
-    {:wal_dir, file_path} |
-    {:delete_obsolete_files_period_micros, pos_integer} |
+    {:bytes_per_sync, pos_integer} |
+    {:disable_data_sync, boolean} |
+    {:allow_os_buffer, boolean} |
+    {:table_cache_num_shard_bits, pos_integer} |
+    {:min_write_buffer_number, pos_integer} |
+    {:max_write_buffer_number, pos_integer} |
+    {:write_buffer_size, pos_integer} |
+    {:max_bytes_for_level_base, pos_integer} |
+    {:max_bytes_for_level_multiplier, pos_integer} |
+    {:max_manifest_file_size, pos_integer} |
+    {:target_file_size_base, pos_integer} |
+    {:min_write_buffer_number_to_merge, pos_integer} |
+    {:level_zero_file_num_compaction_trigger, non_neg_integer} |
+    {:level_zero_slowdown_writes_trigger, non_neg_integer} |
+    {:level_zero_stop_writes_trigger, non_neg_integer}
+    {:compaction_style, compaction_style} |
     {:max_background_compactions, pos_integer} |
     {:max_background_flushes, pos_integer} |
-    {:max_log_file_size, non_neg_integer} |
-    {:log_file_time_to_roll, non_neg_integer} |
-    {:keep_log_file_num, pos_integer} |
-    {:max_manifest_file_size, pos_integer} |
-    {:table_cache_numshardbits, pos_integer} |
-    {:wal_ttl_seconds, non_neg_integer} |
-    {:wal_size_limit_mb, non_neg_integer} |
-    {:manifest_preallocation_size, pos_integer} |
-    {:allow_os_buffer, boolean} |
-    {:allow_mmap_reads, boolean} |
-    {:allow_mmap_writes, boolean} |
-    {:is_fd_close_on_exec, boolean} |
-    {:skip_log_error_on_recovery, boolean} |
-    {:stats_dump_period_sec, non_neg_integer} |
-    {:advise_random_on_open, boolean} |
-    {:access_hint, access_hint} |
-    {:compaction_readahead_size, non_neg_integer} |
-    {:use_adaptive_mutex, boolean} |
-    {:bytes_per_sync, non_neg_integer} |
-    {:skip_stats_update_on_db_open, boolean} |
-    {:wal_recovery_mode, wal_recovery_mode}
+    {:disable_auto_compactions, boolean} |
+    {:report_bg_io_stats, boolean} |
+    {:num_levels, pos_integer}
   ]
 
   @type read_options :: [
