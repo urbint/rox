@@ -147,7 +147,7 @@ defmodule Rox do
 
   """
   @spec open(file_path, db_options, cf_options) :: {:ok, DBHandle.t} | {:error, any}
-  def open(path, db_opts \\ nil, cf_opts \\ nil) do
+  def open(path, db_opts \\ [], cf_opts \\ []) do
     with {:ok, result} <- Native.open(path, to_map(db_opts), to_map(cf_opts)) do
       {:ok, DBHandle.wrap_resource(result)}
     end

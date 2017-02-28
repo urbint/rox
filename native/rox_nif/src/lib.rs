@@ -16,7 +16,7 @@ use rustler::{
 };
 
 use rocksdb::{
-    DB,IteratorMode, Direction
+    DB,IteratorMode, Direction,Options
 };
 
 mod atoms {
@@ -70,8 +70,8 @@ mod atoms {
         // atom block_based_table_options;
 
         // DB Options
-        // atom total_threads;
-        // atom create_if_missing;
+        atom total_threads;
+        atom create_if_missing;
         // atom create_missing_column_families;
         // atom error_if_exists;
         // atom paranoid_checks;
@@ -137,12 +137,36 @@ macro_rules! handle_db_error {
     }
 }
 
+fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options> {
+    let mut opts = Options::default();
+
+    if let Ok(count) = arg.map_get(atoms::total_threads().to_term(env)) {
+        opts.increase_parallelism(count.decode()?);
+    }
+
+    if let Ok(create_if_missing) = arg.map_get(atoms::create_if_missing().to_term(env)) {
+        opts.create_if_missing(create_if_missing.decode()?);
+    }
+
+    Ok(opts)
+}
+
 fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let path: &Path =
         Path::new(args[0].decode()?);
 
-    let db =
-        handle_db_error!(env, DB::open_default(path));
+    let has_db_opts = args[1].map_size()? > 0;
+    let has_cf_opts = args[2].map_size()? > 0;
+
+    let db: DB =
+        if !has_db_opts && !has_cf_opts {
+          handle_db_error!(env, DB::open_default(path))
+        } else if has_db_opts {
+          let opts = decode_db_options(env, args[1])?;
+          handle_db_error!(env, DB::open(&opts, path))
+        } else {
+          handle_db_error!(env, DB::open_default(path))
+        };
     
     let resp =
         (atoms::ok(), ResourceArc::new(DBHandle{
