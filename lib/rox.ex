@@ -4,6 +4,8 @@ defmodule Rox do
 
   """
 
+  alias __MODULE__.{DBHandle,Native}
+
   @opts_to_convert_to_bitlists [:db_log_dir, :wal_dir]
 
   @type compaction_style :: :level | :universal | :fifo | :none
@@ -12,7 +14,6 @@ defmodule Rox do
   @type key :: String.t | binary
   @type value :: any
 
-  @opaque db_handle :: :erocksdb.db_handle
   @opaque cf_handle :: :erocksdb.cf_handle
   @opaque snapshot_handle :: :erocksdb.snapshot_handle
 
@@ -140,29 +141,24 @@ defmodule Rox do
   @type iterator_action :: :first | :last | :next | :prev | binary
 
   @doc """
-  Open a RocksDB with the specified database options and column family options
+  Open a RocksDB with the specified database options and column family options.
+
+  The database will automatically be closed when the BEAM VM releases it for garbage collection.
 
   """
-  @spec open(file_path, db_options, cf_options) :: {:ok, db_handle} | {:error, any}
-  def open(path, db_opts \\ [], cf_opts \\ []) do
-    :erocksdb.open(to_charlist(path), sanitize_opts(db_opts), sanitize_opts(cf_opts))
+  @spec open(file_path, db_options, cf_options) :: {:ok, DBHandle.t} | {:error, any}
+  def open(path, db_opts \\ nil, cf_opts \\ nil) do
+    with {:ok, result} <- Native.open(path, to_map(db_opts), to_map(cf_opts)) do
+      {:ok, DBHandle.wrap_resource(result)}
+    end
   end
-
-
-  @doc """
-  Close the RocksDB with the specifed `db_handle`
-
-  """
-  @spec close(db_handle) :: :ok | {:error, any}
-  def close(db), do:
-    :erocksdb.close(db)
 
 
   @doc """
   Put a key/value pair into the default column family handle
 
   """
-  @spec put(db_handle, key, value) :: :ok | {:error, any}
+  @spec put(DBHandle.t, key, value) :: :ok | {:error, any}
   def put(db, key, value) when is_binary(value), do:
     :erocksdb.put(db, key, value, [])
 
@@ -175,7 +171,7 @@ defmodule Rox do
   write options
 
   """
-  @spec put(db_handle, key, value, write_options) :: :ok | {:error, any}
+  @spec put(DBHandle.t, key, value, write_options) :: :ok | {:error, any}
   def put(db, key, value, write_opts) when is_list(write_opts) and is_binary(value), do:
     :erocksdb.put(db, key, value, write_opts)
 
@@ -187,7 +183,7 @@ defmodule Rox do
   Put a key/value pair into the specified column family with optional `write_options`
 
   """
-  @spec put(db_handle, cf_handle, key, value, write_options) :: :ok | {:error, any}
+  @spec put(DBHandle.t, cf_handle, key, value, write_options) :: :ok | {:error, any}
   def put(db, cf, key, value, write_opts \\ [])
 
   def put(db, cf, key, value, write_opts) when is_binary(value), do:
@@ -202,7 +198,7 @@ defmodule Rox do
 
   For non binary terms, you may use `decode: true` to automatically decode the binary back into the term.
   """
-  @spec get(db_handle, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
+  @spec get(DBHandle.t, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
   def get(db, key, read_opts \\ []) do
     {auto_decode, read_opts} = Keyword.pop(read_opts, :decode)
     with {:ok, val} <- :erocksdb.get(db, key, read_opts) do
@@ -216,10 +212,10 @@ defmodule Rox do
 
 
   @doc """
-  Creates an Elixir stream of the keys within the `db_handle`.
+  Creates an Elixir stream of the keys within the `DBHandle.t`.
 
   """
-  @spec stream_keys(db_handle, read_options) :: Enumerable.t
+  @spec stream_keys(DBHandle.t, read_options) :: Enumerable.t
   def stream_keys(db, read_opts \\ []) do
     Stream.resource(fn ->
       {:ok, iter} =
@@ -284,8 +280,11 @@ defmodule Rox do
   Implemented by calling GetIntProperty with `rocksdb.estimate-num-keys`
 
   """
-  @spec count(db_handle) :: non_neg_integer | {:error, any}
-  def count(db) do
-    :erocksdb.count(db)
+  @spec count(DBHandle.t) :: non_neg_integer | {:error, any}
+  def count(%DBHandle{resource: resource}) do
+    Native.count(resource)
   end
+
+  defp to_map(nil), do: nil
+  defp to_map(enum), do: Enum.into(enum, %{})
 end

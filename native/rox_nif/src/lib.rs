@@ -7,6 +7,7 @@ extern crate lazy_static;
 extern crate rocksdb;
 
 use std::path::Path;
+use std::ops::Deref;
 
 use rustler::resource::ResourceArc;
 
@@ -15,13 +16,13 @@ use rustler::{
 };
 
 use rocksdb::{
-    DB
+    DB,IteratorMode, Direction
 };
 
 mod atoms {
     rustler_atoms! {
         atom ok;
-        // atom error;
+        atom error;
         // atom nil;
         // atom not_found;
 
@@ -127,24 +128,46 @@ struct DBHandle {
     pub db: DB,
 }
 
-struct DBOptions {
-    total_threads: i32,
+macro_rules! handle_db_error {
+    ($env:expr, $e:expr) => {
+        match $e {
+            Ok(inner) => inner,
+            Err(err) => return Ok((atoms::error(), err.to_string().encode($env)).encode($env))
+        }
+    }
 }
 
 fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let path: &Path = Path::new(args[0].decode()?);
-    let db = DB::open_default(path).unwrap();
+    let path: &Path =
+        Path::new(args[0].decode()?);
 
-    let db_handle = ResourceArc::new(DBHandle{
-        db: db,
-    });
+    let db =
+        handle_db_error!(env, DB::open_default(path));
+    
+    let resp =
+        (atoms::ok(), ResourceArc::new(DBHandle{
+            db: db,
+        })).encode(env);
 
-    Ok((atoms::ok(), db_handle).encode(env))
+    Ok(resp)
+}
+
+fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db_handle = db_arc.deref();
+
+    let iterator = db_handle.db.iterator(IteratorMode::Start);
+
+    let count = iterator.count();
+
+    
+    Ok((count as u32).encode(env))
 }
 
 rustler_export_nifs!(
     "Elixir.Rox.Native",
-    [("open", 2, open)],
+    [("open", 3, open),
+    ("count", 1, count)],
     Some(on_load)
 );
 
