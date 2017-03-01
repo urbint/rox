@@ -4,7 +4,7 @@ defmodule Rox do
 
   """
 
-  alias __MODULE__.{DBHandle,Native}
+  alias __MODULE__.{DBHandle,CFHandle,Native}
 
   @opts_to_convert_to_bitlists [:db_log_dir, :wal_dir]
 
@@ -95,7 +95,7 @@ defmodule Rox do
     {:min_write_buffer_number_to_merge, pos_integer} |
     {:level_zero_file_num_compaction_trigger, non_neg_integer} |
     {:level_zero_slowdown_writes_trigger, non_neg_integer} |
-    {:level_zero_stop_writes_trigger, non_neg_integer}
+    {:level_zero_stop_writes_trigger, non_neg_integer} |
     {:compaction_style, compaction_style} |
     {:max_background_compactions, pos_integer} |
     {:max_background_flushes, pos_integer} |
@@ -137,10 +137,21 @@ defmodule Rox do
   The database will automatically be closed when the BEAM VM releases it for garbage collection.
 
   """
-  @spec open(file_path, db_options, cf_options) :: {:ok, DBHandle.t} | {:error, any}
-  def open(path, db_opts \\ [], cf_opts \\ []) do
-    with {:ok, result} <- Native.open(path, to_map(db_opts), to_map(cf_opts)) do
+  @spec open(file_path, db_options) :: {:ok, DBHandle.t} | {:error, any}
+  def open(path, db_opts \\ []) do
+    with {:ok, result} <- Native.open(path, to_map(db_opts)) do
       {:ok, DBHandle.wrap_resource(result)}
+    end
+  end
+
+  @doc """
+  Create a column family in `db` with `name` and `opts`.
+
+  """
+  @spec create_cf(DBHandle.t, String.t, db_options) :: {:ok, CFHandle.t} | {:error, any}
+  def create_cf(%DBHandle{resource: db}, name, opts \\ []) do
+    with {:ok, result} <- Native.create_cf(db, name, to_map(opts)) do
+      {:ok, CFHandle.wrap_resource(result)}
     end
   end
 

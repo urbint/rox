@@ -5,18 +5,22 @@ extern crate rustler_codegen;
 #[macro_use]
 extern crate lazy_static;
 extern crate rocksdb;
+extern crate librocksdb_sys;
 
 use std::path::Path;
 use std::ops::Deref;
+use std::sync::{Arc,Mutex};
 
 use rustler::resource::ResourceArc;
+
+use librocksdb_sys::rocksdb_column_family_handle_t;
 
 use rustler::{
     NifEnv, NifTerm, NifEncoder, NifResult,NifDecoder,NifError
 };
 
 use rocksdb::{
-    DB,IteratorMode, Direction,Options,DBCompressionType
+    DB,IteratorMode, Options,DBCompressionType
 };
 
 mod atoms {
@@ -155,8 +159,15 @@ mod atoms {
 }
 
 struct DBHandle {
-    pub db: DB,
+    pub db: Mutex<DB>,
 }
+
+struct CFHandle {
+    pub cf: *mut librocksdb_sys::rocksdb_column_family_handle_t,
+}
+
+unsafe impl Sync for CFHandle {}
+unsafe impl Send for CFHandle {}
 
 enum CompressionType {
     None,
@@ -327,21 +338,18 @@ fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
         Path::new(args[0].decode()?);
 
     let has_db_opts = args[1].map_size()? > 0;
-    let has_cf_opts = args[2].map_size()? > 0;
 
     let db: DB =
-        if !has_db_opts && !has_cf_opts {
+        if !has_db_opts {
           handle_db_error!(env, DB::open_default(path))
-        } else if has_db_opts {
+        } else {
           let db_opts = decode_db_options(env, args[1])?;
           handle_db_error!(env, DB::open(&db_opts, path))
-        } else {
-          handle_db_error!(env, DB::open_default(path))
         };
     
     let resp =
         (atoms::ok(), ResourceArc::new(DBHandle{
-            db: db,
+            db: Mutex::new(db),
         })).encode(env);
 
     Ok(resp)
@@ -351,7 +359,7 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
 
-    let iterator = db_handle.db.iterator(IteratorMode::Start);
+    let iterator = db_handle.db.lock().unwrap().iterator(IteratorMode::Start);
 
     let count = iterator.count();
 
@@ -359,15 +367,35 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     Ok((count as u64).encode(env))
 }
 
+fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db_handle = db_arc.deref();
+
+    let name: &str = args[1].decode()?;
+    let has_db_opts = args[2].map_size()? > 0;
+    let opts =
+        if has_db_opts { decode_db_options(env, args[2])? } else { Options::default() };
+
+
+    let cf = handle_db_error!(env, db_handle.db.lock().unwrap().create_cf(name, &opts));
+
+    let resp =
+        (atoms::ok(), ResourceArc::new(CFHandle{cf: cf})).encode(env);
+
+    Ok(resp)
+}
+
 rustler_export_nifs!(
     "Elixir.Rox.Native",
-    [("open", 3, open),
+    [("open", 2, open),
+    ("create_cf", 3, create_cf),
     ("count", 1, count)],
     Some(on_load)
 );
 
 fn on_load<'a>(env: NifEnv<'a>, _load_info: NifTerm<'a>) -> bool {
     resource_struct_init!(DBHandle, env);
+    resource_struct_init!(CFHandle, env);
 
     true
 }
