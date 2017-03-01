@@ -14,7 +14,6 @@ defmodule Rox do
   @type key :: String.t | binary
   @type value :: any
 
-  @opaque cf_handle :: :erocksdb.cf_handle
   @opaque snapshot_handle :: :erocksdb.snapshot_handle
 
   @type file_path :: String.t
@@ -30,43 +29,6 @@ defmodule Rox do
     {:cache_index_and_filter_blocks, boolean}
   ]
 
-  @type cf_options :: [
-    {:block_cache_size_mb_for_point_lookup, non_neg_integer} |
-    {:memtable_memory_budget, pos_integer} |
-    {:write_buffer_size,  pos_integer} |
-    {:max_write_buffer_number,  pos_integer} |
-    {:min_write_buffer_number_to_merge,  pos_integer} |
-    {:compression,  compression_type} |
-    {:num_levels,  pos_integer} |
-    {:level0_file_num_compaction_trigger,  integer} |
-    {:level0_slowdown_writes_trigger,  integer} |
-    {:level0_stop_writes_trigger,  integer} |
-    {:max_mem_compaction_level,  pos_integer} |
-    {:target_file_size_base,  pos_integer} |
-    {:target_file_size_multiplier,  pos_integer} |
-    {:max_bytes_for_level_base,  pos_integer} |
-    {:max_bytes_for_level_multiplier,  pos_integer} |
-    {:expanded_compaction_factor,  pos_integer} |
-    {:source_compaction_factor,  pos_integer} |
-    {:max_grandparent_overlap_factor,  pos_integer} |
-    {:soft_rate_limit,  float} |
-    {:hard_rate_limit,  float} |
-    {:arena_block_size,  integer} |
-    {:disable_auto_compactions,  boolean} |
-    {:purge_redundant_kvs_while_flush,  boolean} |
-    {:compaction_style,  compaction_style} |
-    {:verify_checksums_in_compaction,  boolean} |
-    {:filter_deletes,  boolean} |
-    {:max_sequential_skip_in_iterations,  pos_integer} |
-    {:inplace_update_support,  boolean} |
-    {:inplace_update_num_locks,  pos_integer} |
-    {:table_factory_block_cache_size, pos_integer} |
-    {:in_memory_mode, boolean} |
-    {:block_based_table_options, block_based_table_options}
-  ]
-
-  @type db_path :: {:db_path, name :: String.t, options :: cf_options}
-  @type cf_descriptor :: {:cf_descriptor, name :: String.t, options :: cf_options}
   @type access_hint :: :normal | :sequential | :willneed | :none
   @type wal_recovery_mode ::
     :tolerate_corrupted_tail_records |
@@ -116,30 +78,20 @@ defmodule Rox do
 
   @type write_options :: [
     {:sync, boolean} |
-    {:disable_wal, boolean} |
-    {:timeout_hint_us, non_neg_integer} |
-    {:ignore_missing_column_families, boolean}
-  ]
-
-  @type write_actions :: [
-    {:put, key, value} |
-    {:put, cf_handle, key, value} |
-    {:delete, key} |
-    {:delete, cf_handle, key} |
-    :clear
+    {:disable_wal, boolean}
   ]
 
   @type iterator_action :: :first | :last | :next | :prev | binary
 
   @doc """
-  Open a RocksDB with the specified database options and column family options.
+  Open a RocksDB with the specified database options and optional `column_families`.
 
   The database will automatically be closed when the BEAM VM releases it for garbage collection.
 
   """
   @spec open(file_path, db_options) :: {:ok, DBHandle.t} | {:error, any}
-  def open(path, db_opts \\ []) do
-    with {:ok, result} <- Native.open(path, to_map(db_opts)) do
+  def open(path, db_opts \\ [], column_families \\ []) when is_binary(path) and is_list(db_opts) and is_list(column_families) do
+    with {:ok, result} <- Native.open(path, to_map(db_opts), column_families) do
       {:ok, DBHandle.wrap_resource(result)}
     end
   end
@@ -160,13 +112,9 @@ defmodule Rox do
   Put a key/value pair into the default column family handle
 
   """
-  @spec put(DBHandle.t, key, value) :: :ok | {:error, any}
-  def put(db, key, value) when is_binary(value), do:
-    :erocksdb.put(db, key, value, [])
-
-  def put(db, key, value), do:
-    :erocksdb.put(db, key, :erlang.term_to_binary(value), [])
-
+  @spec put(DBHandle.t, key, value, write_options) :: :ok | {:error, any}
+  def put(%DBHandle{resource: db}, key, value) when is_binary(key), do:
+    Native.put(db, key, encode(value), %{})
 
   @doc """
   Put a key/value pair into the default column family handle with the provided
@@ -174,25 +122,17 @@ defmodule Rox do
 
   """
   @spec put(DBHandle.t, key, value, write_options) :: :ok | {:error, any}
-  def put(db, key, value, write_opts) when is_list(write_opts) and is_binary(value), do:
-    :erocksdb.put(db, key, value, write_opts)
-
-  def put(db, key, value, write_opts) when is_list(write_opts), do:
-    :erocksdb.put(db, key, :erlang.term_to_binary(value), write_opts)
+  def put(%DBHandle{resource: db}, key, value, write_opts) when is_binary(key) and (is_list(write_opts) or is_map(write_opts)), do:
+    Native.put(db, key, encode(value), to_map(write_opts))
 
 
   @doc """
   Put a key/value pair into the specified column family with optional `write_options`
 
   """
-  @spec put(DBHandle.t, cf_handle, key, value, write_options) :: :ok | {:error, any}
-  def put(db, cf, key, value, write_opts \\ [])
-
-  def put(db, cf, key, value, write_opts) when is_binary(value), do:
-    :erocksdb.put(db, cf, key, value, write_opts)
-
-  def put(db, cf, key, value, write_opts), do:
-    :erocksdb.put(db, cf, key, :erlang.term_to_binary(value), write_opts)
+  @spec put(DBHandle.t, CFHandle.t, key, value, write_options) :: :ok | {:error, any}
+  def put(%DBHandle{resource: db}, %CFHandle{resource: cf}, key, value, write_opts \\ []) when is_binary(key), do:
+    Native.put_cf(db, cf, key, encode(value), to_map(write_opts))
 
 
   @doc """
@@ -287,6 +227,9 @@ defmodule Rox do
     Native.count(resource)
   end
 
-  defp to_map(nil), do: nil
+  defp to_map(map) when is_map(map), do: map
   defp to_map(enum), do: Enum.into(enum, %{})
+
+  defp encode(val) when is_binary(val), do: val
+  defp encode(val), do: :erlang.term_to_binary(val)
 end
