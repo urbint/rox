@@ -9,7 +9,7 @@ extern crate librocksdb_sys;
 
 use std::path::Path;
 use std::ops::Deref;
-use std::sync::{Mutex};
+use std::sync::{RwLock};
 
 use rustler::resource::ResourceArc;
 
@@ -29,8 +29,7 @@ mod atoms {
     rustler_atoms! {
         atom ok;
         atom error;
-        // atom nil;
-        // atom not_found;
+        atom not_found;
 
         // Compression Type Atoms
         atom snappy;
@@ -144,13 +143,9 @@ mod atoms {
         // atom wal_recovery_mode;
 
         // Read Options
-        // atom verify_checksums;
         // atom fill_cache;
         // atom iterate_upper_bound;
-        // atom tailing;
-        // atom total_order_seek;
         // atom snapshot;
-        // atom decode;
 
         // Write Options
         atom sync;
@@ -159,7 +154,7 @@ mod atoms {
 }
 
 struct DBHandle {
-    pub db: Mutex<DB>,
+    pub db: RwLock<DB>,
 }
 
 struct CFHandle {
@@ -225,6 +220,22 @@ fn decode_write_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Writ
 
     Ok(opts)
 }
+
+// fn decode_read_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<ReadOptions> {
+//     let mut opts = ReadOptions::default();
+
+//     if let Ok(fill_cache) = arg.map_get(atoms::fill_cache().to_term(env)) {
+//         opts.fill_cache(fill_cache.decode()?);
+//     }
+
+//     // TODO implement handling snapshots
+//     if let Ok(iter_upper) = arg.map_get(atoms::iterate_upper_bound().to_term(env)) {
+//         let key: &str = iter_upper.decode()?;
+//         opts.set_iterate_upper_bound(key);
+//     }
+
+//     Ok(opts)
+// }
 
 fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options> {
     let mut opts = Options::default();
@@ -375,7 +386,7 @@ fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     
     let resp =
         (atoms::ok(), ResourceArc::new(DBHandle{
-            db: Mutex::new(db),
+            db: RwLock::new(db),
         })).encode(env);
 
     Ok(resp)
@@ -385,7 +396,7 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
 
-    let iterator = db_handle.db.lock().unwrap().iterator(IteratorMode::Start);
+    let iterator = db_handle.db.read().unwrap().iterator(IteratorMode::Start);
 
     let count = iterator.count();
 
@@ -395,7 +406,7 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 
 fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let mut db = db_arc.deref().db.lock().unwrap();
+    let mut db = db_arc.deref().db.write().unwrap();
 
     let name: &str = args[1].decode()?;
     let has_db_opts = args[2].map_size()? > 0;
@@ -413,7 +424,7 @@ fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
 
 fn put<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.deref().db.lock().unwrap();
+    let db = db_arc.deref().db.write().unwrap();
 
     let key: &str = args[1].decode()?;
     let val: &str = args[2].decode()?;
@@ -435,7 +446,7 @@ fn put<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 
 fn put_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.deref().db.lock().unwrap();
+    let db = db_arc.deref().db.write().unwrap();
 
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
@@ -458,13 +469,34 @@ fn put_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     Ok(atoms::ok().encode(env))
 }
 
+fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.read().unwrap();
+
+    let key: &str = args[1].decode()?;
+
+    let resp =
+        db.get(key.as_bytes());
+
+
+    let val_option = handle_error!(env, resp);
+
+    match val_option {
+        Some(val) => Ok((atoms::ok(), val.to_utf8().unwrap().encode(env)).encode(env)),
+        None => Ok(atoms::not_found().encode(env))
+    }
+
+
+}
+
 rustler_export_nifs!(
     "Elixir.Rox.Native",
     [("open", 3, open),
     ("create_cf", 3, create_cf),
     ("put", 4, put),
     ("put_cf", 5, put_cf),
-    ("count", 1, count)],
+    ("count", 1, count),
+    ("get", 3, get)],
     Some(on_load)
 );
 

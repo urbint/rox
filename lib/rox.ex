@@ -67,13 +67,9 @@ defmodule Rox do
   ]
 
   @type read_options :: [
-    {:verify_checksums, boolean} |
     {:fill_cache, boolean} |
-    {:iterate_upper_bound, binary} |
-    {:tailing, boolean} |
-    {:total_order_seek, boolean} |
-    {:snapshot, snapshot_handle} |
-    {:decode, boolean}
+    {:iterate_upper_bound, binary}
+    # {:snapshot, snapshot_handle} |
   ]
 
   @type write_options :: [
@@ -136,19 +132,15 @@ defmodule Rox do
 
 
   @doc """
-  Retrieve a key/value pair in the default column family
+  Retrieve a key/value pair in the default column family.
 
-  For non binary terms, you may use `decode: true` to automatically decode the binary back into the term.
+  For non binary terms that were stored, they will be automatically decoded.
   """
   @spec get(DBHandle.t, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
-  def get(db, key, read_opts \\ []) do
-    {auto_decode, read_opts} = Keyword.pop(read_opts, :decode)
-    with {:ok, val} <- :erocksdb.get(db, key, read_opts) do
-      if auto_decode do
-        {:ok, :erlang.binary_to_term(val)}
-      else
-        {:ok, val}
-      end
+  def get(%DBHandle{resource: db}, key, read_opts \\ []) when is_binary(key) do
+    case Native.get(db, key, to_map(read_opts)) do
+      {:ok, << "_$rx:", encoded :: binary >>} -> {:ok, :erlang.binary_to_term(encoded)}
+      other -> other
     end
   end
 
@@ -228,8 +220,9 @@ defmodule Rox do
   end
 
   defp to_map(map) when is_map(map), do: map
+  defp to_map([]), do: %{}
   defp to_map(enum), do: Enum.into(enum, %{})
 
   defp encode(val) when is_binary(val), do: val
-  defp encode(val), do: :erlang.term_to_binary(val)
+  defp encode(val), do: "_$rx:" <> :erlang.term_to_binary(val)
 end
