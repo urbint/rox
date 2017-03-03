@@ -9,6 +9,7 @@ extern crate librocksdb_sys;
 
 use std::path::Path;
 use std::ops::Deref;
+use std::io::Write;
 use std::sync::{RwLock};
 
 use rustler::resource::ResourceArc;
@@ -19,6 +20,8 @@ use rustler::{
     NifEnv, NifTerm, NifEncoder, NifResult,NifDecoder,NifError
 };
 
+
+use rustler::types::binary::{NifBinary,OwnedNifBinary};
 use rustler::types::list::NifListIterator;
 
 use rocksdb::{
@@ -427,14 +430,14 @@ fn put<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db = db_arc.deref().db.write().unwrap();
 
     let key: &str = args[1].decode()?;
-    let val: &str = args[2].decode()?;
+    let val: NifBinary = args[2].decode()?;
 
     let resp =
         if args[3].map_size()? > 0 {
             let write_opts = decode_write_options(env, args[2])?;
-            db.put_opt(key.as_bytes(), val.as_bytes(), &write_opts)
+            db.put_opt(key.as_bytes(), val.as_slice(), &write_opts)
         } else {
-            db.put(key.as_bytes(), val.as_bytes())
+            db.put(key.as_bytes(), val.as_slice())
         };
 
 
@@ -452,14 +455,14 @@ fn put_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let cf = cf_arc.deref().cf;
 
     let key: &str = args[2].decode()?;
-    let val: &str = args[3].decode()?;
+    let val: NifBinary = args[3].decode()?;
 
     let resp =
         if args[4].map_size()? > 0 {
             let write_opts = decode_write_options(env, args[2])?;
-            db.put_cf_opt(cf, key.as_bytes(), val.as_bytes(), &write_opts)
+            db.put_cf_opt(cf, key.as_bytes(), val.as_slice(), &write_opts)
         } else {
-            db.put_cf(cf, key.as_bytes(), val.as_bytes())
+            db.put_cf(cf, key.as_bytes(), val.as_slice())
         };
 
 
@@ -482,7 +485,12 @@ fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let val_option = handle_error!(env, resp);
 
     match val_option {
-        Some(val) => Ok((atoms::ok(), val.to_utf8().unwrap().encode(env)).encode(env)),
+        Some(val) => {
+            let mut bin = OwnedNifBinary::new(val.len()).unwrap();
+            bin.as_mut_slice().write(&val).unwrap();
+
+            Ok((atoms::ok(), bin.release(env).encode(env)).encode(env))
+        }
         None => Ok(atoms::not_found().encode(env))
     }
 
