@@ -134,7 +134,8 @@ defmodule Rox do
   @doc """
   Retrieve a key/value pair in the default column family.
 
-  For non binary terms that were stored, they will be automatically decoded.
+  For non-binary terms that were stored, they will be automatically decoded.
+
   """
   @spec get(DBHandle.t, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
   def get(%DBHandle{resource: db}, key, read_opts \\ []) when is_binary(key) do
@@ -195,16 +196,6 @@ defmodule Rox do
     end, scan_or_decode, fn {iter, _dir} ->
       :erocksdb.iterator_close(iter)
     end)
-  end
-
-  defp sanitize_opts(opts) do
-    {raw, rest} =
-      Keyword.split(opts, @opts_to_convert_to_bitlists)
-
-    converted =
-      Enum.map(raw, fn {k, val} -> {k, to_charlist(val)} end)
-
-    Keyword.merge(rest, converted)
   end
 
 

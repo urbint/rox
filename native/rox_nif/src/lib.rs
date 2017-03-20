@@ -14,18 +14,16 @@ use std::sync::{RwLock};
 
 use rustler::resource::ResourceArc;
 
-use librocksdb_sys::rocksdb_column_family_handle_t;
-
 use rustler::{
     NifEnv, NifTerm, NifEncoder, NifResult,NifDecoder,NifError
 };
 
 
 use rustler::types::binary::{NifBinary,OwnedNifBinary};
-use rustler::types::list::NifListIterator;
-
+use rustler::types::list::NifListIterator; 
 use rocksdb::{
-    DB, IteratorMode, Options, DBCompressionType, WriteOptions
+    DB, IteratorMode, Options, DBCompressionType, WriteOptions,
+    ColumnFamily
 };
 
 mod atoms {
@@ -108,7 +106,7 @@ mod atoms {
         atom level_zero_file_num_compaction_trigger;
         atom level_zero_slowdown_writes_trigger;
         atom level_zero_stop_writes_trigger;
-        atom compaction_style;
+        // atom compaction_style;
         atom max_background_compactions;
         atom max_background_flushes;
         atom disable_auto_compactions;
@@ -161,43 +159,30 @@ struct DBHandle {
 }
 
 struct CFHandle {
-    pub cf: *mut rocksdb_column_family_handle_t,
+    pub cf: ColumnFamily,
 }
 
 unsafe impl Sync for CFHandle {}
 unsafe impl Send for CFHandle {}
 
-enum CompressionType {
-    None,
-    Snappy,
-    Zlib,
-    Bz2,
-    Lz4,
-    Lz4hc,
+struct CompressionType {
+    pub raw: DBCompressionType
 }
-
 impl <'a> NifDecoder<'a> for CompressionType {
     fn decode(term: NifTerm<'a>) -> NifResult<Self> {
-        if atoms::none() == term { Ok(CompressionType::None) }
-        else if atoms::snappy()  == term { Ok(CompressionType::Snappy) }
-        else if atoms::zlib()    == term { Ok(CompressionType::Zlib) }
-        else if atoms::bzip2()   == term { Ok(CompressionType::Bz2) }
-        else if atoms::lz4()     == term { Ok(CompressionType::Lz4) }
-        else if atoms::lz4h()    == term { Ok(CompressionType::Lz4hc) }
+        if atoms::none() == term { Ok(CompressionType{raw: DBCompressionType::None}) }
+        else if atoms::snappy()  == term { Ok(CompressionType{raw: DBCompressionType::Snappy}) }
+        else if atoms::zlib()    == term { Ok(CompressionType{raw: DBCompressionType::Zlib}) }
+        else if atoms::bzip2()   == term { Ok(CompressionType{raw: DBCompressionType::Bz2}) }
+        else if atoms::lz4()     == term { Ok(CompressionType{raw: DBCompressionType::Lz4}) }
+        else if atoms::lz4h()    == term { Ok(CompressionType{raw: DBCompressionType::Lz4hc}) }
         else { Err(NifError::BadArg) }
     }
 }
 
 impl Into<DBCompressionType> for CompressionType {
     fn into(self) -> DBCompressionType {
-        match self {
-            CompressionType::None => DBCompressionType::None,
-            CompressionType::Snappy => DBCompressionType::Snappy,
-            CompressionType::Zlib => DBCompressionType::Zlib,
-            CompressionType::Bz2 => DBCompressionType::Bz2,
-            CompressionType::Lz4 => DBCompressionType::Lz4,
-            CompressionType::Lz4hc => DBCompressionType::Lz4hc,
-        }
+        self.raw
     }
 }
 
@@ -376,10 +361,10 @@ fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
         if args[2].list_length()? == 0 {
             vec![]
         } else {
-            let iter: NifListIterator = try!(args[2].decode());
+            let iter: NifListIterator = args[2].decode()?;
             let result: Vec<&str> =
                 try!(iter
-                .map(|x| x.decode::<&str>())
+                .map(|x| x.decode())
                 .collect::<NifResult<Vec<&str>>>());
 
             result
