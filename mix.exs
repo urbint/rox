@@ -9,8 +9,8 @@ defmodule Rox.Mixfile do
      start_permanent: Mix.env == :prod,
      compilers: [:rustler] ++ Mix.compilers(),
      rustler_crates: rustler_crates(),
-     description: description(),
      package: package(),
+     description: description(),
      deps: deps()]
   end
 
@@ -32,7 +32,8 @@ defmodule Rox.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:rustler, git: "https://github.com/hansihe/rustler.git", sparse: "rustler_mix"},
+      {:rustler, "~> 0.9.0"},
+      {:ex_doc, ">= 0.0.0", only: :dev}
     ]
   end
 
@@ -42,16 +43,16 @@ defmodule Rox.Mixfile do
     ]
   end
 
-  defp description, do:
+  defp description do
      """
-     Rust powered bindings to Facebook's RocksDB
-
+     Rust powered NIF bindings to Facebook's RocksDB
      """
+  end
 
   defp package do
     [
       name: :rox,
-      files: ["lib", "native", "mix.exs", "README*", "History.md", "LICENSE"],
+      files: ["lib", "native/rox_nif/Cargo.*", "native/rox_nif/src", "mix.exs", "README.md", "History.md", "LICENSE"],
       maintainers: ["Ryan Schmukler"],
       licenses: ["MIT"],
       links: %{"GitHub" => "https://github.com/urbint/rox"}
