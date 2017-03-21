@@ -5,7 +5,7 @@ defmodule Rox.DB do
   For working with the database, see the functions in the top
   level `Rox` module.
   
-  Implements the `Collectable` and `Enumerable` protocol.
+  Implements the `Collectable` and `Enumerable` protocols.
 
   """
 
@@ -24,6 +24,40 @@ defmodule Rox.DB do
 
     def inspect(handle, opts) do
       "#Rox.DB<#{to_doc(handle.reference, opts)}>"
+    end
+  end
+
+  defimpl Enumerable do
+    def count(db), do: {:ok, Rox.count(db)}
+
+    def member?(db, {key, val}) do
+      with {:ok, stored_val} <- Rox.get(db, key) do
+        stored_val == {:ok, val}
+      else
+        _ -> {:ok, false}
+      end
+    end
+    def member?(_, _), do: {:ok, false}
+
+    def reduce(db, cmd, fun) do
+      Rox.stream(db)
+      |> Enumerable.reduce(cmd, fun)
+    end
+  end
+
+  defimpl Collectable do
+    def into(db) do
+      collector_fun = fn
+        db, {:cont, {key, val}} when is_binary(key) ->
+          :ok = Rox.put(db, key, val)
+          db
+        db, :done ->
+          db
+        _, :halt ->
+          :ok
+      end
+
+      {db, collector_fun}
     end
   end
 end

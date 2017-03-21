@@ -444,7 +444,7 @@ fn count_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>>
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
 
-    let cf_arc: ResourceArc<CFHandle> = args[0].decode()?;
+    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
 
 
@@ -472,6 +472,18 @@ fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
         (atoms::ok(), ResourceArc::new(CFHandle{cf: cf})).encode(env);
 
     Ok(resp)
+}
+
+fn cf_handle<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.read().unwrap();
+
+    let name: &str = args[1].decode()?;
+
+    match db.cf_handle(name) {
+        Some(cf) => Ok((atoms::ok(), ResourceArc::new(CFHandle{cf: cf})).encode(env)),
+        None => Ok((atoms::error(), format!("Could not find ColumnFamily named {}", name)).encode(env))
+    }
 }
 
 fn put<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
@@ -622,10 +634,22 @@ fn iterator_next<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm
     }
 }
 
+fn iterator_reset<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let iter_arc: ResourceArc<IteratorHandle> = args[0].decode()?;
+    let mut iter = iter_arc.deref().iter.write().unwrap();
+
+    let iterator_mode = decode_iterator_mode(args[1])?;
+
+    iter.set_mode(iterator_mode);
+
+    Ok(atoms::ok().encode(env))
+}
+
 rustler_export_nifs!(
     "Elixir.Rox.Native",
     [("open", 3, open),
     ("create_cf", 3, create_cf),
+    ("cf_handle", 2, cf_handle),
     ("put", 4, put),
     ("put_cf", 5, put_cf),
     ("count", 1, count),
@@ -633,6 +657,7 @@ rustler_export_nifs!(
     ("iterate", 2, iterate),
     ("iterate_cf", 3, iterate_cf),
     ("iterator_next", 1, iterator_next),
+    ("iterator_reset", 2, iterator_reset),
     ("get", 3, get),
     ("get_cf", 4, get_cf)],
     Some(on_load)

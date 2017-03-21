@@ -6,15 +6,11 @@ defmodule Rox do
 
   alias __MODULE__.{DB,ColumnFamily,Native,Utils,Cursor}
 
-  @opts_to_convert_to_bitlists [:db_log_dir, :wal_dir]
-
   @type compaction_style :: :level | :universal | :fifo | :none
   @type compression_type :: :snappy | :zlib | :bzip2 | :lz4 | :lz4h | :none
 
   @type key :: String.t | binary
   @type value :: any
-
-  @type iterator_mode :: :start | :end | {:from, key, :forward | :backward}
 
   @opaque snapshot_handle :: :erocksdb.snapshot_handle
 
@@ -41,6 +37,7 @@ defmodule Rox do
   @type db_options :: [
     {:total_threads, pos_integer} |
     {:optimize_level_type_compaction_memtable_memory_budget, integer} |
+    {:auto_create_column_families, boolean} |
     {:create_if_missing, boolean} |
     {:max_open_files, pos_integer} |
     {:compression_type, compression_type} |
@@ -80,15 +77,68 @@ defmodule Rox do
   ]
 
   @doc """
-  Open a RocksDB with the specified database options and optional `column_families`.
+  Open a RocksDB with the optional `db_opts` and `column_families`.
+  
+  If `column_families` are provided, a 3 element tuple will be returned with
+  the second element being a map of column family names to `Rox.ColumnFamily` handles.
+  The column families must have already been created via `create_cf` or the option
+  `auto_create_column_families` can be set to `true`. If it is, the `db_opts` will be
+  used to create the column families.
+  
 
   The database will automatically be closed when the BEAM VM releases it for garbage collection.
 
   """
-  @spec open(file_path, db_options) :: {:ok, DB.t} | {:error, any}
+  @spec open(file_path, db_options, [ColumnFamily.name]) ::
+    {:ok, DB.t} |
+    {:ok, DB.t, %{ColumnFamily.name => ColumnFamily.t}} |
+    {:error, any}
   def open(path, db_opts \\ [], column_families \\ []) when is_binary(path) and is_list(db_opts) and is_list(column_families) do
-    with {:ok, result} <- Native.open(path, to_map(db_opts), column_families) do
-      {:ok, DB.wrap_resource(result)}
+    db_opts =
+      to_map(db_opts)
+
+    auto_create_cfs? =
+      db_opts[:auto_create_column_families]
+
+    case column_families do
+      [] ->
+        do_open_db_with_no_cf(path, db_opts)
+
+      _ ->
+        # First try opening with existing column families
+        with {:ok, db}         <- Native.open(path, db_opts, column_families),
+                   db          <- DB.wrap_resource(db),
+             {:ok, cf_handles} <- map_or_error(column_families, &cf_handle(db, &1)) do
+
+            cf_map =
+              Enum.zip(column_families, cf_handles)
+              |> Enum.into(%{})
+
+            {:ok, db, cf_map}
+        else
+          {:error, << "Invalid argument: Column family not found:", _rest :: binary >>} when auto_create_cfs? ->
+            do_open_db_and_create_cfs(path, db_opts, column_families)
+          other ->
+           other
+        end
+    end
+  end
+
+  defp do_open_db_with_no_cf(path, opts) do
+    with {:ok, db} <- Native.open(path, opts, []) do
+      {:ok, DB.wrap_resource(db)}
+    end
+  end
+
+  defp do_open_db_and_create_cfs(path, opts, column_families) do
+    with {:ok, db} <- do_open_db_with_no_cf(path, opts),
+         {:ok, cf_handles} <- map_or_error(column_families, &create_cf(db, &1, opts)) do
+
+      cf_map =
+        Enum.zip(column_families, cf_handles)
+        |> Enum.into(%{})
+
+      {:ok, db, cf_map}
     end
   end
 
@@ -96,9 +146,22 @@ defmodule Rox do
   Create a column family in `db` with `name` and `opts`.
 
   """
-  @spec create_cf(DB.t, String.t, db_options) :: {:ok, ColumnFamily.t} | {:error, any}
+  @spec create_cf(DB.t, ColumnFamily.name, db_options) :: {:ok, ColumnFamily.t} | {:error, any}
   def create_cf(%DB{resource: raw_db} = db, name, opts \\ []) do
     with {:ok, result} <- Native.create_cf(raw_db, name, to_map(opts)) do
+      {:ok, ColumnFamily.wrap_resource(db, result, name)}
+    end
+  end
+
+  @doc """
+  Gets an existing `ColumnFamily.t` from the database.
+
+  The column family must have been created via `create_cf/2` or from `open/3` with the `auto_create_column_families` option.
+
+  """
+  @spec cf_handle(DB.t, ColumnFamily.name) :: {:ok, ColumnFamily.t} | {:error, any}
+  def cf_handle(%DB{resource: raw_db} = db, name) do
+    with {:ok, result} <- Native.cf_handle(raw_db, name) do
       {:ok, ColumnFamily.wrap_resource(db, result, name)}
     end
   end
@@ -143,22 +206,22 @@ defmodule Rox do
   Returns a `Cursor.t` which will iterate records from the provided database or
   column family.
 
-  Optionally takes an `iterator_mode`. Defaults to `:start`.
+  Optionally takes an `Iterator.mode`. Defaults to `:start`.
   
   The default arguments of this function is used for the `Enumerable` implementation
   for `DB` and `ColumnFamily` structs.
   
   """
-  @spec stream(DB.t | ColumnFamily.t, iterator_mode) :: Cursor.t
+  @spec stream(DB.t | ColumnFamily.t, Iterator.mode) :: Cursor.t | {:error, any}
   def stream(db_or_cf, mode \\ :start)
   def stream(%DB{resource: db}, mode) do
     with {:ok, resource} = Native.iterate(db, mode) do
-      {:ok, Cursor.wrap_resource(resource)}
+      Cursor.wrap_resource(resource, mode)
     end
   end
   def stream(%ColumnFamily{db_resource: db, cf_resource: cf}, mode) do
     with {:ok, resource} = Native.iterate_cf(db, cf, mode) do
-      {:ok, Cursor.wrap_resource(resource)}
+      Cursor.wrap_resource(resource, mode)
     end
   end
 
@@ -180,4 +243,24 @@ defmodule Rox do
   defp to_map(map) when is_map(map), do: map
   defp to_map([]), do: %{}
   defp to_map(enum), do: Enum.into(enum, %{})
+
+
+  defp map_or_error(list, fun) do
+    do_map_or_error(list, fun, [])
+  end
+
+  defp do_map_or_error([], _fun, results), do: {:ok, :lists.reverse(results)}
+  defp do_map_or_error([item | rest], fun, results) do
+    case fun.(item) do
+      {:error, _} = err ->
+        err
+
+      {:ok, result} ->
+        do_map_or_error(rest, fun, [result | results])
+
+      result ->
+        do_map_or_error(rest, fun, [result | results])
+    end
+  end
+
 end

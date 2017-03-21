@@ -5,6 +5,7 @@ defmodule Rox.Native do
   def count(_), do: raise "Nif not loaded"
   def count_cf(_, _), do: raise "Nif not loaded"
   def create_cf(_, _, _), do: raise "Nif not loaded"
+  def cf_handle(_, _), do: raise "Nif not loaded"
   def put(_, _, _, _), do: raise "Nif not loaded"
   def put_cf(_, _, _, _, _), do: raise "Nif not loaded"
   def get(_, _, _), do: raise "Nif not loaded"
@@ -12,4 +13,5 @@ defmodule Rox.Native do
   def iterate(_, _), do: raise "Nif not loaded"
   def iterate_cf(_, _, _), do: raise "Nif not loaded"
   def iterator_next(_), do: raise "Nif not loaded"
+  def iterator_reset(_, _), do: raise "Nif not loaded"
 end

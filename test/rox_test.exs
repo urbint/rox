@@ -3,8 +3,17 @@ defmodule RoxTest do
   doctest Rox
 
   setup do
-    path = Path.join(__DIR__, "test.rocksdb")
-    {:ok, db} = Rox.open(path, create_if_missing: true)
+    path =
+      Path.join(__DIR__, "test.rocksdb")
+
+    cf_path =
+      Path.join(__DIR__, "cf_test.rocksdb")
+
+    {:ok, db} =
+      Rox.open(path, create_if_missing: true)
+
+    {:ok, db} =
+      Rox.open(path, create_if_missing: true)
 
     on_exit fn ->
       Rox.close(db)

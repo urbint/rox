@@ -6,16 +6,51 @@ defmodule Rox.Cursor do
 
   @typedoc "A cursor for iterating over a database or column family"
   @type t :: %__MODULE__{
-    resource: binary
+    resource: binary, mode: mode
   }
-  defstruct [:resource]
+
+  defstruct [:resource, :mode]
+
+  @type mode :: :start | :end | {:from, Rox.key, :forward | :backward}
 
   @doc false
-  def wrap_resource(resource), do: %__MODULE__{resource: resource}
+  def wrap_resource(resource, mode) do
+    %__MODULE__{resource: resource, mode: mode}
+  end
+
 
   defimpl Inspect do
-    def inspect(handle, _) do
+    def inspect(_, _) do
       "#Rox.Cursor<>"
+    end
+  end
+
+
+  defimpl Enumerable do
+    alias Rox.{Cursor,Native,Utils}
+
+    def count(_), do: {:error, __MODULE__}
+    def member?(_, _), do: {:error, __MODULE__}
+
+    def reduce(%Cursor{resource: raw, mode: mode}, {:halt, acc}, _fun) do
+      Native.iterator_reset(raw, mode)
+      {:halted, acc}
+    end
+    def reduce(%Cursor{} = cursor, {:suspend, acc}, fun) do
+      {:suspended, acc, &reduce(cursor, &1, fun)}
+    end
+    def reduce(%Cursor{resource: raw, mode: mode} = cursor, {:cont, acc}, fun) do
+      case Native.iterator_next(raw) do
+        :done ->
+          Native.iterator_reset(raw, mode)
+          {:done, acc}
+
+        {key, value} ->
+          value =
+            Utils.decode(value)
+
+          reduce(cursor, fun.({key, value}, acc), fun)
+      end
     end
   end
 end

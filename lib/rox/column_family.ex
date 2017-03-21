@@ -18,6 +18,7 @@ defmodule Rox.ColumnFamily do
   }
   defstruct [:db_reference, :db_resource, :cf_resource, :name]
 
+  @type name :: binary
 
   @doc false
   def wrap_resource(%DB{resource: db_resource, reference: db_reference}, resource, name) do
@@ -32,6 +33,40 @@ defmodule Rox.ColumnFamily do
 
     def inspect(handle, opts) do
       "#Rox.ColumnFamily<#{to_doc(handle.db_reference, opts)}>.#{handle.name}"
+    end
+  end
+
+  defimpl Enumerable do
+    def count(cf), do: {:ok, Rox.count(cf)}
+
+    def member?(cf, {key, val}) do
+      with {:ok, stored_val} <- Rox.get(cf, key) do
+        stored_val == {:ok, val}
+      else
+        _ -> {:ok, false}
+      end
+    end
+    def member?(_, _), do: {:ok, false}
+
+    def reduce(cf, cmd, fun) do
+      Rox.stream(cf)
+      |> Enumerable.reduce(cmd, fun)
+    end
+  end
+
+  defimpl Collectable do
+    def into(cf) do
+      collector_fun = fn
+        cf, {:cont, {key, val}} ->
+          :ok = Rox.put(cf, key, val)
+          cf
+        cf, :done ->
+          cf
+        _, :halt ->
+          :ok
+      end
+
+      {cf, collector_fun}
     end
   end
 end
