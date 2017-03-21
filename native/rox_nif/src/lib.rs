@@ -18,12 +18,13 @@ use rustler::{
     NifEnv, NifTerm, NifEncoder, NifResult,NifDecoder,NifError
 };
 
-
+use rustler::dynamic::TermType;
 use rustler::types::binary::{NifBinary,OwnedNifBinary};
+use rustler::types::atom::{NifAtom};
 use rustler::types::list::NifListIterator; 
 use rocksdb::{
     DB, IteratorMode, Options, DBCompressionType, WriteOptions,
-    ColumnFamily
+    ColumnFamily, Direction, DBIterator
 };
 
 mod atoms {
@@ -39,6 +40,14 @@ mod atoms {
         atom lz4;
         atom lz4h;
         atom none;
+
+        // Iterator Atoms
+        atom forward;
+        atom reverse;
+        atom start;
+        atom end;
+        atom from;
+        atom done;
             
 
         // Block Based Table Option atoms
@@ -164,6 +173,14 @@ struct CFHandle {
 
 unsafe impl Sync for CFHandle {}
 unsafe impl Send for CFHandle {}
+
+struct IteratorHandle {
+    pub iter: RwLock<DBIterator>,
+}
+
+unsafe impl Sync for IteratorHandle {}
+unsafe impl Send for IteratorHandle {}
+
 
 struct CompressionType {
     pub raw: DBCompressionType
@@ -346,6 +363,37 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
     Ok(opts)
 }
 
+fn decode_iterator_mode<'a>(arg: NifTerm<'a>) -> NifResult<IteratorMode<'a>> {
+    match arg.get_type() {
+        TermType::Atom => {
+            let atom: NifAtom = arg.decode()?;
+
+            if atom == atoms::start() {
+                Ok(IteratorMode::Start)
+            } else if atom == atoms::end() {
+                Ok(IteratorMode::End)
+            } else {
+                Err(NifError::BadArg)
+            }
+        }
+
+        TermType::Tuple => {
+            let (atom_from, key, atom_dir): (NifAtom, &str, NifAtom) = arg.decode()?;
+
+            if atom_from == atoms::from() && (atom_dir == atoms::forward() || atom_dir == atoms::reverse()) {
+                let dir: Direction =
+                    if atom_dir == atoms::forward() { Direction::Forward } else { Direction::Reverse };
+                Ok(IteratorMode::From(key.as_bytes(), dir))
+                
+            } else{
+                Err(NifError::BadArg)
+            }
+        }
+
+        _ => Err(NifError::BadArg)
+    }
+}
+
 fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let path: &Path =
         Path::new(args[0].decode()?);
@@ -385,6 +433,22 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_handle = db_arc.deref();
 
     let iterator = db_handle.db.read().unwrap().iterator(IteratorMode::Start);
+
+    let count = iterator.count();
+
+    
+    Ok((count as u64).encode(env))
+}
+
+fn count_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db_handle = db_arc.deref();
+
+    let cf_arc: ResourceArc<CFHandle> = args[0].decode()?;
+    let cf = cf_arc.deref().cf;
+
+
+    let iterator = handle_error!(env, db_handle.db.read().unwrap().iterator_cf(cf, IteratorMode::Start));
 
     let count = iterator.count();
 
@@ -478,8 +542,84 @@ fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
         }
         None => Ok(atoms::not_found().encode(env))
     }
+}
 
+fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.read().unwrap();
 
+    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
+    let cf = cf_arc.deref().cf;
+
+    let key: &str = args[2].decode()?;
+
+    let resp =
+        db.get_cf(cf, key.as_bytes());
+
+    let val_option = handle_error!(env, resp);
+
+    match val_option {
+        Some(val) => {
+            let mut bin = OwnedNifBinary::new(val.len()).unwrap();
+            bin.as_mut_slice().write(&val).unwrap();
+
+            Ok((atoms::ok(), bin.release(env).encode(env)).encode(env))
+        }
+        None => Ok(atoms::not_found().encode(env))
+    }
+}
+
+fn iterate<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.read().unwrap();
+    let iterator_mode = decode_iterator_mode(args[1])?;
+
+    let iter = db.iterator(iterator_mode);
+
+    let resp =
+        (atoms::ok(), ResourceArc::new(IteratorHandle{
+            iter: RwLock::new(iter),
+        })).encode(env);
+
+    Ok(resp)
+}
+
+fn iterate_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.read().unwrap();
+
+    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
+    let cf = cf_arc.deref().cf;
+
+    let iterator_mode = decode_iterator_mode(args[2])?;
+
+    let iter = handle_error!(env, db.iterator_cf(cf, iterator_mode));
+
+    let resp =
+        (atoms::ok(), ResourceArc::new(IteratorHandle{
+            iter: RwLock::new(iter),
+        })).encode(env);
+
+    Ok(resp)
+}
+
+fn iterator_next<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let iter_arc: ResourceArc<IteratorHandle> = args[0].decode()?;
+    let mut iter = iter_arc.deref().iter.write().unwrap();
+
+    match iter.next() {
+        None => Ok(atoms::done().encode(env)),
+        Some((key, val)) => {
+
+            let mut enc_key = OwnedNifBinary::new(key.len()).unwrap();
+            enc_key.as_mut_slice().write(&key).unwrap();
+
+            let mut enc_val = OwnedNifBinary::new(val.len()).unwrap();
+            enc_val.as_mut_slice().write(&val).unwrap();
+
+            Ok((enc_key.release(env).encode(env), enc_val.release(env).encode(env)).encode(env))
+        }
+    }
 }
 
 rustler_export_nifs!(
@@ -489,13 +629,18 @@ rustler_export_nifs!(
     ("put", 4, put),
     ("put_cf", 5, put_cf),
     ("count", 1, count),
-    ("get", 3, get)],
+    ("count_cf", 2, count_cf),
+    ("iterate", 2, iterate),
+    ("iterate_cf", 3, iterate_cf),
+    ("iterator_next", 1, iterator_next),
+    ("get", 3, get),
+    ("get_cf", 4, get_cf)],
     Some(on_load)
 );
 
 fn on_load<'a>(env: NifEnv<'a>, _load_info: NifTerm<'a>) -> bool {
     resource_struct_init!(DBHandle, env);
     resource_struct_init!(CFHandle, env);
-
+    resource_struct_init!(IteratorHandle, env);
     true
 }

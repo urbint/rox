@@ -4,7 +4,7 @@ defmodule Rox do
 
   """
 
-  alias __MODULE__.{DBHandle,CFHandle,Native}
+  alias __MODULE__.{DB,ColumnFamily,Native,Utils,Cursor}
 
   @opts_to_convert_to_bitlists [:db_log_dir, :wal_dir]
 
@@ -13,6 +13,8 @@ defmodule Rox do
 
   @type key :: String.t | binary
   @type value :: any
+
+  @type iterator_mode :: :start | :end | {:from, key, :forward | :backward}
 
   @opaque snapshot_handle :: :erocksdb.snapshot_handle
 
@@ -77,18 +79,16 @@ defmodule Rox do
     {:disable_wal, boolean}
   ]
 
-  @type iterator_action :: :first | :last | :next | :prev | binary
-
   @doc """
   Open a RocksDB with the specified database options and optional `column_families`.
 
   The database will automatically be closed when the BEAM VM releases it for garbage collection.
 
   """
-  @spec open(file_path, db_options) :: {:ok, DBHandle.t} | {:error, any}
+  @spec open(file_path, db_options) :: {:ok, DB.t} | {:error, any}
   def open(path, db_opts \\ [], column_families \\ []) when is_binary(path) and is_list(db_opts) and is_list(column_families) do
     with {:ok, result} <- Native.open(path, to_map(db_opts), column_families) do
-      {:ok, DBHandle.wrap_resource(result)}
+      {:ok, DB.wrap_resource(result)}
     end
   end
 
@@ -96,124 +96,88 @@ defmodule Rox do
   Create a column family in `db` with `name` and `opts`.
 
   """
-  @spec create_cf(DBHandle.t, String.t, db_options) :: {:ok, CFHandle.t} | {:error, any}
-  def create_cf(%DBHandle{resource: db}, name, opts \\ []) do
-    with {:ok, result} <- Native.create_cf(db, name, to_map(opts)) do
-      {:ok, CFHandle.wrap_resource(result)}
+  @spec create_cf(DB.t, String.t, db_options) :: {:ok, ColumnFamily.t} | {:error, any}
+  def create_cf(%DB{resource: raw_db} = db, name, opts \\ []) do
+    with {:ok, result} <- Native.create_cf(raw_db, name, to_map(opts)) do
+      {:ok, ColumnFamily.wrap_resource(db, result, name)}
     end
   end
 
 
   @doc """
-  Put a key/value pair into the default column family handle
+  Put a key/value pair into the specified database or column family.
+  
+  Optionally takes a list of `write_options`.
+
+  Non-binary values will automatically be encoded using the `:erlang.term_to_binary/1` function.
 
   """
-  @spec put(DBHandle.t, key, value, write_options) :: :ok | {:error, any}
-  def put(%DBHandle{resource: db}, key, value) when is_binary(key), do:
-    Native.put(db, key, encode(value), %{})
-
-  @doc """
-  Put a key/value pair into the default column family handle with the provided
-  write options
-
-  """
-  @spec put(DBHandle.t, key, value, write_options) :: :ok | {:error, any}
-  def put(%DBHandle{resource: db}, key, value, write_opts) when is_binary(key) and (is_list(write_opts) or is_map(write_opts)), do:
-    Native.put(db, key, encode(value), to_map(write_opts))
+  @spec put(DB.t | ColumnFamily.t, key, value, write_options) :: :ok | {:error, any}
+  def put(db_or_cf, key, value, write_opts \\[])
+  def put(%DB{resource: db}, key, value, write_opts) when is_binary(key) and is_list(write_opts), do:
+    Native.put(db, key, Utils.encode(value), to_map(write_opts))
+  def put(%ColumnFamily{db_resource: db, cf_resource: cf}, key, value, write_opts) when is_binary(key), do:
+    Native.put_cf(db, cf, key, Utils.encode(value), to_map(write_opts))
 
 
   @doc """
-  Put a key/value pair into the specified column family with optional `write_options`
+  Get a key/value pair in the databse or column family with the specified `key`.
 
-  """
-  @spec put(DBHandle.t, CFHandle.t, key, value, write_options) :: :ok | {:error, any}
-  def put(%DBHandle{resource: db}, %CFHandle{resource: cf}, key, value, write_opts \\ []) when is_binary(key), do:
-    Native.put_cf(db, cf, key, encode(value), to_map(write_opts))
-
-
-  @doc """
-  Retrieve a key/value pair in the default column family.
+  Optionally takes a list of `read_options`.
 
   For non-binary terms that were stored, they will be automatically decoded.
 
   """
-  @spec get(DBHandle.t, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
-  def get(%DBHandle{resource: db}, key, read_opts \\ []) when is_binary(key) do
-    case Native.get(db, key, to_map(read_opts)) do
-      {:ok, << "_$rx:", encoded :: binary >>} -> {:ok, :erlang.binary_to_term(encoded)}
-      other -> other
-    end
+  @spec get(DB.t | ColumnFamily.t, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
+  def get(db_or_cf, key, opts \\ [])
+  def get(%DB{resource: db}, key, opts) when is_binary(key) and is_list(opts) do
+    Native.get(db, key, to_map(opts))
+    |> Utils.decode
+  end
+  def get(%ColumnFamily{db_resource: db, cf_resource: cf}, key, opts) when is_binary(key) and is_list(opts) do
+    Native.get_cf(db, cf, key, to_map(opts))
+    |> Utils.decode
   end
 
-
   @doc """
-  Creates an Elixir stream of the keys within the `DBHandle.t`.
+  Returns a `Cursor.t` which will iterate records from the provided database or
+  column family.
 
+  Optionally takes an `iterator_mode`. Defaults to `:start`.
+  
+  The default arguments of this function is used for the `Enumerable` implementation
+  for `DB` and `ColumnFamily` structs.
+  
   """
-  @spec stream_keys(DBHandle.t, read_options) :: Enumerable.t
-  def stream_keys(db, read_opts \\ []) do
-    Stream.resource(fn ->
-      {:ok, iter} =
-        :erocksdb.iterator(db, read_opts, :keys_only)
-
-      {iter, :first}
-    end, fn {iter, dir} ->
-      case :erocksdb.iterator_move(iter, dir) do
-        {:ok, key} -> {[key], {iter, :next}}
-        {:error, :invalid_iterator} -> {:halt, {iter, :done}}
-      end
-    end, fn {iter, _dir} ->
-      :erocksdb.iterator_close(iter)
-    end)
+  @spec stream(DB.t | ColumnFamily.t, iterator_mode) :: Cursor.t
+  def stream(db_or_cf, mode \\ :start)
+  def stream(%DB{resource: db}, mode) do
+    with {:ok, resource} = Native.iterate(db, mode) do
+      {:ok, Cursor.wrap_resource(resource)}
+    end
   end
-
-  def stream(db, read_opts \\ []) do
-    {auto_decode, read_opts} =
-      Keyword.pop(read_opts, :decode)
-
-    scan = fn {iter, dir} ->
-      case :erocksdb.iterator_move(iter, dir) do
-        {:ok, key, val} -> {[{key, val}], {iter, :next}}
-        {:error, :invalid_iterator} -> {:halt, {iter, :done}}
-      end
+  def stream(%ColumnFamily{db_resource: db, cf_resource: cf}, mode) do
+    with {:ok, resource} = Native.iterate_cf(db, cf, mode) do
+      {:ok, Cursor.wrap_resource(resource)}
     end
-
-    scan_or_decode = if auto_decode do
-      fn arg ->
-        with {[{key, val}], acc} <- scan.(arg) do
-          val = :erlang.binary_to_term(val)
-          {[{key, val}], acc}
-        end
-      end
-    else
-      scan
-    end
-
-    Stream.resource(fn ->
-      {:ok, iter} =
-        :erocksdb.iterator(db, read_opts)
-      {iter, :first}
-    end, scan_or_decode, fn {iter, _dir} ->
-      :erocksdb.iterator_close(iter)
-    end)
   end
 
 
   @doc """
-  Return the approximate number of keys in the default column family.
+  Return the approximate number of keys in the database or specified column family.
 
   Implemented by calling GetIntProperty with `rocksdb.estimate-num-keys`
 
   """
-  @spec count(DBHandle.t) :: non_neg_integer | {:error, any}
-  def count(%DBHandle{resource: resource}) do
-    Native.count(resource)
+  @spec count(DB.t | ColumnFamily.t) :: non_neg_integer | {:error, any}
+  def count(%DB{resource: db}) do
+    Native.count(db)
+  end
+  def count(%ColumnFamily{db_resource: db, cf_resource: cf}) do
+    Native.count_cf(db, cf)
   end
 
   defp to_map(map) when is_map(map), do: map
   defp to_map([]), do: %{}
   defp to_map(enum), do: Enum.into(enum, %{})
-
-  defp encode(val) when is_binary(val), do: val
-  defp encode(val), do: "_$rx:" <> :erlang.term_to_binary(val)
 end
