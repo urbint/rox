@@ -533,6 +533,51 @@ fn put_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     Ok(atoms::ok().encode(env))
 }
 
+fn delete<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.write().unwrap();
+
+    let key: &str = args[1].decode()?;
+
+    let resp =
+        if args[2].map_size()? > 0 {
+            let write_opts = decode_write_options(env, args[2])?;
+            db.delete_opt(key.as_bytes(), &write_opts)
+        } else {
+            db.delete(key.as_bytes())
+        };
+
+
+    handle_error!(env, resp);
+
+
+    Ok(atoms::ok().encode(env))
+}
+
+fn delete_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.write().unwrap();
+
+    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
+    let cf = cf_arc.deref().cf;
+
+    let key: &str = args[2].decode()?;
+
+    let resp =
+        if args[3].map_size()? > 0 {
+            let write_opts = decode_write_options(env, args[3])?;
+            db.delete_cf_opt(cf, key.as_bytes(), &write_opts)
+        } else {
+            db.delete_cf(cf, key.as_bytes() )
+        };
+
+
+    handle_error!(env, resp);
+
+
+    Ok(atoms::ok().encode(env))
+}
+
 fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.deref().db.read().unwrap();
@@ -652,6 +697,8 @@ rustler_export_nifs!(
     ("cf_handle", 2, cf_handle),
     ("put", 4, put),
     ("put_cf", 5, put_cf),
+    ("delete", 3, delete),
+    ("delete_cf", 4, delete_cf),
     ("count", 1, count),
     ("count_cf", 2, count_cf),
     ("iterate", 2, iterate),

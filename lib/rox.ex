@@ -211,6 +211,11 @@ defmodule Rox do
   The default arguments of this function is used for the `Enumerable` implementation
   for `DB` and `ColumnFamily` structs.
   
+  Note: The result of stream is a cursor which is *not* meant to be shared across processes.
+  Iterating over the cursor will result in an internal state in RocksDB being modified.
+  If two processes try and use the same cursor, they will consume
+  each others results. This may or may not be desired.
+  
   """
   @spec stream(DB.t | ColumnFamily.t, Iterator.mode) :: Cursor.t | {:error, any}
   def stream(db_or_cf, mode \\ :start)
@@ -238,6 +243,22 @@ defmodule Rox do
   end
   def count(%ColumnFamily{db_resource: db, cf_resource: cf}) do
     Native.count_cf(db, cf)
+  end
+
+
+  @doc """
+  Deletes the specified `key` from the provided database or column family.
+  
+  Optionally takes a list of `write_opts`.
+
+  """
+  @spec delete(DB.t | ColumnFamily.t, key, write_options) :: :ok | {:error, any}
+  def delete(db_or_cf, key, write_opts \\ [])
+  def delete(%DB{resource: db}, key, write_opts) do
+    Native.delete(db, key, to_map(write_opts))
+  end
+  def delete(%ColumnFamily{db_resource: db, cf_resource: cf}, key, write_opts) do
+    Native.delete_cf(db, cf, key, to_map(write_opts))
   end
 
   defp to_map(map) when is_map(map), do: map

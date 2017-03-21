@@ -2,65 +2,76 @@ defmodule RoxTest do
   use ExUnit.Case, async: false
   doctest Rox
 
-  setup do
+  setup_all do
     path =
       Path.join(__DIR__, "test.rocksdb")
 
-    cf_path =
-      Path.join(__DIR__, "cf_test.rocksdb")
-
-    {:ok, db} =
-      Rox.open(path, create_if_missing: true)
-
-    {:ok, db} =
-      Rox.open(path, create_if_missing: true)
+    {:ok, db, %{"people" => people}} =
+      Rox.open(path, [create_if_missing: true, auto_create_column_families: true], ["people"])
 
     on_exit fn ->
-      Rox.close(db)
       File.rm_rf(path)
       :ok
     end
 
-    {:ok, %{db: db}}
+    {:ok, %{db: db, people: people}}
   end
 
-  test "simple put and get", %{db: db} do
-    assert :not_found = Rox.get(db, "key")
-    :ok = Rox.put(db, "key", "val")
+  describe "Working with default column family" do
+    test "simple put and get", %{db: db} do
+      assert :not_found = Rox.get(db, "put_test")
 
-    assert {:ok, "val"} = Rox.get(db, "key")
+      assert :ok = Rox.put(db, "put_test", "val")
+
+      assert {:ok, "val"} = Rox.get(db, "put_test")
+    end
+
+    test "stream", %{db: db} do
+      assert :ok = Rox.put(db, "stream_test", "val")
+
+      count =
+        Rox.stream(db)
+        |> Enum.count
+
+      assert count > 0
+    end
+
+    test "delete", %{db: db} do
+      assert :not_found = Rox.get(db, "delete_test")
+      assert :ok = Rox.put(db, "delete_test", "some_val")
+      assert {:ok, _val} = Rox.get(db, "delete_test")
+      assert :ok = Rox.delete(db, "delete_test")
+
+      assert :not_found = Rox.get(db, "delete_test")
+    end
   end
 
-  test "stream_keys", %{db: db} do
-    :ok = Rox.put(db, "key", "val")
+  describe "Working with non-default column family" do
+    test "simple put and get", %{people: people} do
+      assert :not_found = Rox.get(people, "put_test")
 
-    count = Rox.stream_keys(db)
-    |> Enum.count
+      assert :ok = Rox.put(people, "put_test", "val")
 
-    assert count == 1
-  end
+      assert {:ok, "val"} = Rox.get(people, "put_test")
+    end
 
-  test "stream", %{db: db} do
-    :ok = Rox.put(db, "key", "val")
+    test "stream", %{people: people} do
+      assert :ok = Rox.put(people, "stream_test", "val")
 
-    count = Rox.stream(db)
-    |> Enum.count
+      count =
+        Rox.stream(people)
+        |> Enum.count
 
-    assert count == 1
-  end
+      assert count > 0
+    end
 
-  test "partial exhaustion of a stream", %{db: db} do
-    :ok = Rox.put(db, "key", "val")
-    :ok = Rox.put(db, "alt-key", "val")
+    test "delete", %{people: people} do
+      assert :not_found = Rox.get(people, "delete_test")
+      assert :ok = Rox.put(people, "delete_test", "some_val")
+      assert {:ok, _val} = Rox.get(people, "delete_test")
+      assert :ok = Rox.delete(people, "delete_test")
 
-    Rox.stream_keys(db) |> Enum.take(1)
-  end
-
-  test "count", %{db: db} do
-    count =
-      Rox.count(db)
-
-    assert is_number(count)
-    assert count >= 0
+      assert :not_found = Rox.get(people, "delete_test")
+    end
   end
 end

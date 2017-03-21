@@ -10,6 +10,8 @@ defmodule Rox.Native do
   def put_cf(_, _, _, _, _), do: raise "Nif not loaded"
   def get(_, _, _), do: raise "Nif not loaded"
   def get_cf(_, _, _, _), do: raise "Nif not loaded"
+  def delete(_, _, _), do: raise "Nif not loaded"
+  def delete_cf(_, _, _, _), do: raise "Nif not loaded"
   def iterate(_, _), do: raise "Nif not loaded"
   def iterate_cf(_, _, _), do: raise "Nif not loaded"
   def iterator_next(_), do: raise "Nif not loaded"
