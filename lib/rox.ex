@@ -93,9 +93,9 @@ defmodule Rox do
     {:ok, DB.t} |
     {:ok, DB.t, %{ColumnFamily.name => ColumnFamily.t}} |
     {:error, any}
-  def open(path, db_opts \\ [], column_families \\ []) when is_binary(path) and is_list(db_opts) and is_list(column_families) do
+  def open(path, raw_opts \\ [], column_families \\ []) when is_binary(path) and is_list(raw_opts) and is_list(column_families) do
     db_opts =
-      to_map(db_opts)
+      to_map(raw_opts)
 
     auto_create_cfs? =
       db_opts[:auto_create_column_families]
@@ -117,7 +117,7 @@ defmodule Rox do
             {:ok, db, cf_map}
         else
           {:error, << "Invalid argument: Column family not found:", _rest :: binary >>} when auto_create_cfs? ->
-            do_open_db_and_create_cfs(path, db_opts, column_families)
+            do_open_db_and_create_cfs(path, raw_opts, column_families)
           other ->
            other
         end
@@ -277,9 +277,6 @@ defmodule Rox do
         err
 
       {:ok, result} ->
-        do_map_or_error(rest, fun, [result | results])
-
-      result ->
         do_map_or_error(rest, fun, [result | results])
     end
   end
