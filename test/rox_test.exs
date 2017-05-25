@@ -27,13 +27,15 @@ defmodule RoxTest do
     end
 
     test "stream", %{db: db} do
-      assert :ok = Rox.put(db, "stream_test", "val")
+      for x <- 0..10 do
+        :ok = Rox.put(db, "stream_test_#{x}", "val")
+      end
 
-      count =
+      items =
         Rox.stream(db)
-        |> Enum.count
+        |> Enum.into([])
 
-      assert count > 0
+      assert length(items) > 10
     end
 
     test "delete", %{db: db} do
