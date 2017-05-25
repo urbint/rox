@@ -93,10 +93,7 @@ defmodule Rox do
     {:ok, DB.t} |
     {:ok, DB.t, %{ColumnFamily.name => ColumnFamily.t}} |
     {:error, any}
-  def open(path, raw_opts \\ [], column_families \\ []) when is_binary(path) and is_list(raw_opts) and is_list(column_families) do
-    db_opts =
-      to_map(raw_opts)
-
+  def open(path, db_opts \\ [], column_families \\ []) when is_binary(path) and is_list(db_opts) and is_list(column_families) do
     auto_create_cfs? =
       db_opts[:auto_create_column_families]
 
@@ -106,7 +103,7 @@ defmodule Rox do
 
       _ ->
         # First try opening with existing column families
-        with {:ok, db}         <- Native.open(path, db_opts, column_families),
+        with {:ok, db}         <- Native.open(path, to_map(db_opts), column_families),
                    db          <- DB.wrap_resource(db),
              {:ok, cf_handles} <- map_or_error(column_families, &cf_handle(db, &1)) do
 
@@ -117,7 +114,7 @@ defmodule Rox do
             {:ok, db, cf_map}
         else
           {:error, << "Invalid argument: Column family not found:", _rest :: binary >>} when auto_create_cfs? ->
-            do_open_db_and_create_cfs(path, raw_opts, column_families)
+            do_open_db_and_create_cfs(path, db_opts, column_families)
           other ->
            other
         end
@@ -125,7 +122,7 @@ defmodule Rox do
   end
 
   defp do_open_db_with_no_cf(path, opts) do
-    with {:ok, db} <- Native.open(path, opts, []) do
+    with {:ok, db} <- Native.open(path, to_map(opts), []) do
       {:ok, DB.wrap_resource(db)}
     end
   end
