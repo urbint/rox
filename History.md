@@ -1,4 +1,12 @@
 
+1.0.2 / 2017-05-26
+==================
+
+  * fix(): no longer crash if DB reference is released before an iterator ref
+  * deps(): update rust dependencies
+  * test(stream): better testing
+  * fix(): error when auto creating non existent column families
+
 1.0.0 / 2017-03-21
 ==================
 
