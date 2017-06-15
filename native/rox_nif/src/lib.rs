@@ -22,7 +22,7 @@ use rustler::types::atom::{NifAtom};
 use rustler::types::list::NifListIterator; 
 use rocksdb::{
     DB, IteratorMode, Options, DBCompressionType, WriteOptions,
-    ColumnFamily, Direction, DBIterator
+    ColumnFamily, Direction, DBIterator, WriteBatch
 };
 
 
@@ -31,6 +31,12 @@ mod atoms {
         atom ok;
         atom error;
         atom not_found;
+
+        // Batch Operation Atoms
+        atom put;
+        atom put_cf;
+        atom delete;
+        atom delete_cf;
 
         // Compression Type Atoms
         atom snappy;
@@ -184,7 +190,6 @@ struct IteratorHandle {
 unsafe impl Sync for IteratorHandle {}
 unsafe impl Send for IteratorHandle {}
 
-
 struct CompressionType {
     pub raw: DBCompressionType
 }
@@ -203,6 +208,32 @@ impl <'a> NifDecoder<'a> for CompressionType {
 impl Into<DBCompressionType> for CompressionType {
     fn into(self) -> DBCompressionType {
         self.raw
+    }
+}
+
+enum BatchOperation<'a> {
+    Put(&'a[u8], &'a[u8]),
+    PutCf(ColumnFamily, &'a[u8], &'a[u8]),
+    Delete(&'a[u8]),
+    DeleteCf(ColumnFamily, &'a[u8]),
+}
+
+impl <'a> NifDecoder<'a> for BatchOperation<'a> {
+    fn decode(term: NifTerm<'a>) -> NifResult<Self> {
+        let (operation, details): (NifTerm, NifTerm) = term.decode()?;
+        if atoms::put() == operation {
+            let (key, val): (NifBinary, NifBinary) = details.decode()?;
+            Ok(BatchOperation::Put(key.as_slice(), val.as_slice()))
+        } else if atoms::put_cf() == operation {
+            let (cf, key, val): (ResourceArc<CFHandle>, NifBinary, NifBinary) = details.decode()?;
+            Ok(BatchOperation::PutCf(cf.cf, key.as_slice(), val.as_slice()))
+        } else if atoms::delete() == operation {
+            let key: NifBinary = details.decode()?;
+            Ok(BatchOperation::Delete(key.as_slice()))
+        } else if atoms::delete_cf() == operation {
+            let (cf, key): (ResourceArc<CFHandle>, NifBinary) = details.decode()?;
+            Ok(BatchOperation::DeleteCf(cf.cf, key.as_slice()))
+        } else { Err(NifError::BadArg) }
     }
 }
 
@@ -695,6 +726,31 @@ fn iterator_reset<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTer
     Ok(atoms::ok().encode(env))
 }
 
+fn batch_write<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let ops_iter: NifListIterator = args[0].decode()?;
+    let ops: Vec<BatchOperation> =
+        try!(ops_iter
+             .map(|x| x.decode())
+             .collect::<NifResult<Vec<BatchOperation>>>());
+
+    let db_arc: ResourceArc<DBHandle> = args[1].decode()?;
+    let db = db_arc.db.write().unwrap();
+
+    let mut batch = WriteBatch::default();
+    for op in ops {
+        match op {
+            BatchOperation::Put(key, val) => batch.put(key, val).unwrap(),
+            BatchOperation::PutCf(cf, key, val) => batch.put_cf(cf, key, val).unwrap(),
+            BatchOperation::Delete(key) => batch.delete(key).unwrap(),
+            BatchOperation::DeleteCf(cf, key) => batch.delete_cf(cf, key).unwrap()
+        }
+    }
+
+    handle_error!(env, db.write(batch));
+    Ok(atoms::ok().encode(env))
+}
+
+
 rustler_export_nifs!(
     "Elixir.Rox.Native",
     [("open", 3, open),
@@ -711,7 +767,8 @@ rustler_export_nifs!(
     ("iterator_next", 1, iterator_next),
     ("iterator_reset", 2, iterator_reset),
     ("get", 3, get),
-    ("get_cf", 4, get_cf)],
+    ("get_cf", 4, get_cf),
+    ("batch_write", 2, batch_write)],
     Some(on_load)
 );
 

@@ -1,5 +1,6 @@
 defmodule RoxTest do
   use ExUnit.Case, async: false
+  alias Rox.Batch
   doctest Rox
 
   setup_all do
@@ -74,6 +75,31 @@ defmodule RoxTest do
       assert :ok = Rox.delete(people, "delete_test")
 
       assert :not_found = Rox.get(people, "delete_test")
+    end
+  end
+
+  describe "Batch Operations" do
+    test "puts and deletes", %{db: db, people: people} do
+      assert :not_found = Rox.get(db, "batch_put_test")
+      assert :not_found = Rox.get(people, "batch_put_test")
+
+      assert :ok =
+        Batch.new
+        |> Batch.put("batch_put_test", "works")
+        |> Batch.put(people, "batch_put_test", "works")
+        |> Batch.write(db)
+
+      assert {:ok, "works"} = Rox.get(db, "batch_put_test")
+      assert {:ok, "works"} = Rox.get(people, "batch_put_test")
+
+      assert :ok =
+        Batch.new
+        |> Batch.delete("batch_put_test")
+        |> Batch.delete(people, "batch_put_test")
+        |> Batch.write(db)
+
+      assert :not_found = Rox.get(db, "batch_put_test")
+      assert :not_found = Rox.get(people, "batch_put_test")
     end
   end
 end

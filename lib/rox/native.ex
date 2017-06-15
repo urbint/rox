@@ -111,4 +111,11 @@ defmodule Rox.Native do
       1 -> :ok
     end
   end
+
+  def batch_write(_, _) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> :ok
+    end
+  end
 end
