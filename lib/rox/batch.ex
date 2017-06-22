@@ -73,4 +73,18 @@ defmodule Rox.Batch do
     |> :lists.reverse
     |> Native.batch_write(db)
   end
+
+
+  @doc """
+  Merges a list of `Batch.t` into a single `Batch.t`.
+
+  """
+  @spec merge([t]) :: t
+  def merge(batches) do
+    batches
+    |> Enum.reduce(Batch.new, fn %Batch{operations: ops}, %Batch{operations: merge_ops} = acc ->
+      %{acc | operations: Enum.concat(ops, merge_ops)}
+    end)
+  end
+
 end
