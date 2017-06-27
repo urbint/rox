@@ -116,6 +116,7 @@ defmodule Rox.Native do
     case :erlang.phash2(1, 1) do
       0 -> raise "Nif not loaded"
       1 -> :ok
+      2 -> {:error, ""}
     end
   end
 end
