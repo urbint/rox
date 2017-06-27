@@ -1,4 +1,11 @@
 
+1.2.0 / 2017-06-27
+==================
+
+  * fix(): dialyzer specs on Rox.batch_write/2
+  * feat(batch): Implement merge/2
+  * feat(batch): Impls batch merging
+
 1.1.0 / 2017-06-15
 ==================
 
