@@ -3,7 +3,7 @@ defmodule Rox.Mixfile do
 
   def project do
     [app: :rox,
-     version: "1.2.0",
+     version: "1.2.1",
      elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
