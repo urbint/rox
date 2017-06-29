@@ -32,7 +32,7 @@ defmodule Rox.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:rustler, "~> 0.9.0"},
+      {:rustler, "~> 0.10.0"},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:benchfella, "~> 0.3", only: :dev},
       {:faker, "~> 0.7", only: :dev},

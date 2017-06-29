@@ -9,9 +9,9 @@ path = "src/lib.rs"
 crate-type = ["dylib"]
 
 [dependencies]
-rustler = "^0.14"
-rustler_codegen = "^0.14"
+rustler = "^0.15"
+rustler_codegen = "^0.15"
 rocksdb = "^0.6"
-librocksdb-sys = "^0.4.1"
+librocksdb-sys = "^0.4"
 
 lazy_static = "*"
