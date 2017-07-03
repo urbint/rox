@@ -3,7 +3,7 @@ defmodule Rox.Mixfile do
 
   def project do
     [app: :rox,
-     version: "1.2.0",
+     version: "1.2.2",
      elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
@@ -32,7 +32,7 @@ defmodule Rox.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:rustler, "~> 0.10.0"},
+      {:rustler, "~> 0.10"},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:benchfella, "~> 0.3", only: :dev},
       {:faker, "~> 0.7", only: :dev},
