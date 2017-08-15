@@ -27,6 +27,15 @@ defmodule RoxTest do
       assert {:ok, "val"} = Rox.get(db, "put_test")
     end
 
+    test "put with a binary key", %{db: db} do
+      binary_key =
+        << 131, 251, 222, 111 >>
+
+      assert :not_found = Rox.get(db, binary_key)
+      assert :ok = Rox.put(db, binary_key, "test")
+      assert {:ok, "test"} = Rox.get(db, binary_key)
+    end
+
     test "stream", %{db: db} do
       for x <- 0..10 do
         :ok = Rox.put(db, "stream_test_#{x}", "val")

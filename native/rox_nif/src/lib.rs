@@ -19,7 +19,7 @@ use rustler::{
 use rustler::dynamic::TermType;
 use rustler::types::binary::{NifBinary,OwnedNifBinary};
 use rustler::types::atom::{NifAtom};
-use rustler::types::list::NifListIterator; 
+use rustler::types::list::NifListIterator;
 use rocksdb::{
     DB, IteratorMode, Options, DBCompressionType, WriteOptions,
     ColumnFamily, Direction, DBIterator, WriteBatch
@@ -53,7 +53,7 @@ mod atoms {
         atom end;
         atom from;
         atom done;
-            
+
 
         // Block Based Table Option atoms
         // atom no_block_cache;
@@ -412,13 +412,13 @@ fn decode_iterator_mode<'a>(arg: NifTerm<'a>) -> NifResult<IteratorMode<'a>> {
         }
 
         TermType::Tuple => {
-            let (atom_from, key, atom_dir): (NifAtom, &str, NifAtom) = arg.decode()?;
+            let (atom_from, key, atom_dir): (NifAtom, NifBinary, NifAtom) = arg.decode()?;
 
             if atom_from == atoms::from() && (atom_dir == atoms::forward() || atom_dir == atoms::reverse()) {
                 let dir: Direction =
                     if atom_dir == atoms::forward() { Direction::Forward } else { Direction::Reverse };
-                Ok(IteratorMode::From(key.as_bytes(), dir))
-                
+                Ok(IteratorMode::From(key.as_slice(), dir))
+
             } else{
                 Err(NifError::BadArg)
             }
@@ -470,7 +470,7 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 
     let count = iterator.count();
 
-    
+
     Ok((count as u64).encode(env))
 }
 
@@ -486,7 +486,7 @@ fn count_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>>
 
     let count = iterator.count();
 
-    
+
     Ok((count as u64).encode(env))
 }
 
@@ -524,15 +524,15 @@ fn put<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.deref().db.write().unwrap();
 
-    let key: &str = args[1].decode()?;
+    let key: NifBinary = args[1].decode()?;
     let val: NifBinary = args[2].decode()?;
 
     let resp =
         if args[3].map_size()? > 0 {
             let write_opts = decode_write_options(env, args[2])?;
-            db.put_opt(key.as_bytes(), val.as_slice(), &write_opts)
+            db.put_opt(key.as_slice(), val.as_slice(), &write_opts)
         } else {
-            db.put(key.as_bytes(), val.as_slice())
+            db.put(key.as_slice(), val.as_slice())
         };
 
 
@@ -549,15 +549,15 @@ fn put_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
 
-    let key: &str = args[2].decode()?;
+    let key: NifBinary = args[2].decode()?;
     let val: NifBinary = args[3].decode()?;
 
     let resp =
         if args[4].map_size()? > 0 {
             let write_opts = decode_write_options(env, args[2])?;
-            db.put_cf_opt(cf, key.as_bytes(), val.as_slice(), &write_opts)
+            db.put_cf_opt(cf, key.as_slice(), val.as_slice(), &write_opts)
         } else {
-            db.put_cf(cf, key.as_bytes(), val.as_slice())
+            db.put_cf(cf, key.as_slice(), val.as_slice())
         };
 
 
@@ -571,14 +571,14 @@ fn delete<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.deref().db.write().unwrap();
 
-    let key: &str = args[1].decode()?;
+    let key: NifBinary = args[1].decode()?;
 
     let resp =
         if args[2].map_size()? > 0 {
             let write_opts = decode_write_options(env, args[2])?;
-            db.delete_opt(key.as_bytes(), &write_opts)
+            db.delete_opt(key.as_slice(), &write_opts)
         } else {
-            db.delete(key.as_bytes())
+            db.delete(key.as_slice())
         };
 
 
@@ -595,14 +595,14 @@ fn delete_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
 
-    let key: &str = args[2].decode()?;
+    let key: NifBinary = args[2].decode()?;
 
     let resp =
         if args[3].map_size()? > 0 {
             let write_opts = decode_write_options(env, args[3])?;
-            db.delete_cf_opt(cf, key.as_bytes(), &write_opts)
+            db.delete_cf_opt(cf, key.as_slice(), &write_opts)
         } else {
-            db.delete_cf(cf, key.as_bytes() )
+            db.delete_cf(cf, key.as_slice() )
         };
 
 
@@ -616,10 +616,10 @@ fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.deref().db.read().unwrap();
 
-    let key: &str = args[1].decode()?;
+    let key: NifBinary = args[1].decode()?;
 
     let resp =
-        db.get(key.as_bytes());
+        db.get(key.as_slice());
 
 
     let val_option = handle_error!(env, resp);
@@ -642,10 +642,10 @@ fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.cf;
 
-    let key: &str = args[2].decode()?;
+    let key: NifBinary = args[2].decode()?;
 
     let resp =
-        db.get_cf(cf, key.as_bytes());
+        db.get_cf(cf, key.as_slice());
 
     let val_option = handle_error!(env, resp);
 
