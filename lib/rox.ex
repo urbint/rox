@@ -78,13 +78,13 @@ defmodule Rox do
 
   @doc """
   Open a RocksDB with the optional `db_opts` and `column_families`.
-  
+
   If `column_families` are provided, a 3 element tuple will be returned with
   the second element being a map of column family names to `Rox.ColumnFamily` handles.
   The column families must have already been created via `create_cf` or the option
   `auto_create_column_families` can be set to `true`. If it is, the `db_opts` will be
   used to create the column families.
-  
+
 
   The database will automatically be closed when the BEAM VM releases it for garbage collection.
 
@@ -166,7 +166,7 @@ defmodule Rox do
 
   @doc """
   Put a key/value pair into the specified database or column family.
-  
+
   Optionally takes a list of `write_options`.
 
   Non-binary values will automatically be encoded using the `:erlang.term_to_binary/1` function.
@@ -203,18 +203,18 @@ defmodule Rox do
   Returns a `Cursor.t` which will iterate records from the provided database or
   column family.
 
-  Optionally takes an `Iterator.mode`. Defaults to `:start`.
-  
+  Optionally takes an `Rox.Cursor.mode`. Defaults to `:start`.
+
   The default arguments of this function is used for the `Enumerable` implementation
   for `DB` and `ColumnFamily` structs.
-  
+
   Note: The result of stream is a cursor which is *not* meant to be shared across processes.
   Iterating over the cursor will result in an internal state in RocksDB being modified.
   If two processes try and use the same cursor, they will consume
   each others results. This may or may not be desired.
-  
+
   """
-  @spec stream(DB.t | ColumnFamily.t, Iterator.mode) :: Cursor.t | {:error, any}
+  @spec stream(DB.t | ColumnFamily.t, Rox.Cursor.mode) :: Cursor.t | {:error, any}
   def stream(db_or_cf, mode \\ :start)
   def stream(%DB{resource: db}, mode) do
     with {:ok, resource} = Native.iterate(db, mode) do
@@ -245,7 +245,7 @@ defmodule Rox do
 
   @doc """
   Deletes the specified `key` from the provided database or column family.
-  
+
   Optionally takes a list of `write_opts`.
 
   """
