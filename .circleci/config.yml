@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/elixir:1.4
+      - image: urbint/elixir:1.4
 
     working_directory: ~/repo
     steps:
