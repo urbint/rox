@@ -11,7 +11,6 @@ crate-type = ["dylib"]
 [dependencies]
 rustler = "^0.15"
 rustler_codegen = "^0.15"
-rocksdb = "^0.6"
-librocksdb-sys = "^0.4"
+rocksdb = { git = "https://github.com/urbint/rust-rocksdb.git" }
 
 lazy_static = "*"

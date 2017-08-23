@@ -3,7 +3,6 @@ extern crate rustler;
 #[macro_use]
 extern crate lazy_static;
 extern crate rocksdb;
-extern crate librocksdb_sys;
 
 use std::path::Path;
 use std::ops::Deref;
