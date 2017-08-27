@@ -1,6 +1,7 @@
 version: 2
 jobs:
   build:
+    resource_class: xlarge
     docker:
       - image: urbint/elixir:1.4
 
@@ -8,5 +9,17 @@ jobs:
     steps:
       - checkout
 
+      - restore_cache:
+          key: 'mix-build-pretest-{{ checksum "mix.exs" }}-{{ checksum "mix.lock" }}'
+
       - run: mix deps.get
+      - run: mix deps.compile
+
+      - save_cache:
+          paths: ['_build', 'deps']
+          key: 'mix-build-pretest-{{ checksum "mix.exs" }}-{{ checksum "mix.lock" }}'
+
+      - run:
+          command: mix compile
+          no_output_timeout: 4h
       - run: mix test
