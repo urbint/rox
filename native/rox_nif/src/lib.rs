@@ -3,7 +3,6 @@ extern crate rustler;
 #[macro_use]
 extern crate lazy_static;
 extern crate rocksdb;
-extern crate librocksdb_sys;
 
 use std::path::Path;
 use std::ops::Deref;
@@ -106,7 +105,6 @@ mod atoms {
         atom compression_type;
         atom use_fsync;
         atom bytes_per_sync;
-        atom disable_data_sync;
         atom allow_os_buffer;
         atom table_cache_num_shard_bits;
         atom min_write_buffer_number;
@@ -127,7 +125,6 @@ mod atoms {
         atom report_bg_io_stats;
         atom num_levels;
         // atom max_total_wal_size;
-        // atom disable_data_sync;
         // atom use_fsync;
         // atom db_paths;
         // atom db_log_dir;
@@ -309,10 +306,6 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
 
     if let Ok(bytes_per_sync) = arg.map_get(atoms::bytes_per_sync().to_term(env)) {
         opts.set_bytes_per_sync(bytes_per_sync.decode()?);
-    }
-
-    if let Ok(disable_sync) = arg.map_get(atoms::disable_data_sync().to_term(env)) {
-        opts.set_disable_data_sync(disable_sync.decode()?);
     }
 
     if let Ok(allow_os_buffer) = arg.map_get(atoms::allow_os_buffer().to_term(env)) {

@@ -43,7 +43,6 @@ defmodule Rox do
     {:compression_type, compression_type} |
     {:use_fsync, boolean} |
     {:bytes_per_sync, pos_integer} |
-    {:disable_data_sync, boolean} |
     {:allow_os_buffer, boolean} |
     {:table_cache_num_shard_bits, pos_integer} |
     {:min_write_buffer_number, pos_integer} |
