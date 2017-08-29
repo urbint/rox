@@ -1,4 +1,14 @@
 
+2.0.0 / 2017-08-29
+==================
+
+Update RocksDB to 5.6.1
+
+  * deps(rocksdb): Update to rust-rocksdb 0.7.0
+  * **BREAKING** fix(): Remove disable_data_sync
+  * deps(rocksdb): Depend on our fork of rust-rocksdb
+  * chore(rox:stream): Corrects docs & fn spec
+
 1.3.0 / 2017-08-15
 ==================
 
