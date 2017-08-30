@@ -61,7 +61,8 @@ defmodule Rox do
     {:max_background_flushes, pos_integer} |
     {:disable_auto_compactions, boolean} |
     {:report_bg_io_stats, boolean} |
-    {:num_levels, pos_integer}
+    {:num_levels, pos_integer} |
+    {:use_direct_io_for_flush_and_compaction, boolean}
   ]
 
   @type read_options :: [
