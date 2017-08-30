@@ -153,6 +153,7 @@ mod atoms {
         // atom bytes_per_sync;
         // atom skip_stats_update_on_db_open;
         // atom wal_recovery_mode;
+        atom use_direct_io_for_flush_and_compaction;
 
         // Read Options
         // atom fill_cache;
@@ -386,6 +387,10 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
         opts.set_num_levels(num_levels.decode()?);
     }
 
+    if let Ok(enabled) =
+        arg.map_get(atoms::use_direct_io_for_flush_and_compaction().to_term(env)) {
+            opts.set_use_direct_io_for_flush_and_compaction(enabled.decode()?);
+        }
 
     Ok(opts)
 }
