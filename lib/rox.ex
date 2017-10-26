@@ -229,6 +229,33 @@ defmodule Rox do
 
 
   @doc """
+  Returns a `Cursor.t` which will iterate *keys* from the provided database or column family.
+
+  Optionally takes a `Rox.Cursor.mode`, which defaults to `:start`.
+
+  Note: The result of `stream_keys` is a cursor which is *not* meant to be shared across processes.
+  Iterating over the cursor will result in an internal state in RocksDB being modified.
+  If two processes try and use the same cursor, they will consume
+  each others results. This may or may not be desired.
+
+  """
+  @spec stream_keys(DB.t | ColumnFamily.t, Rox.Cursor.mode) :: Cursor.t | {:error, any}
+  def stream_keys(db_or_cf, mode \\ :start)
+  def stream_keys(%DB{resource: db}, mode) do
+    with {:ok, resource} = Native.iterate(db, mode) do
+      Cursor.wrap_resource(resource, mode, decode_values: false)
+      |> Stream.map(&elem(&1, 0))
+    end
+  end
+  def stream_keys(%ColumnFamily{db_resource: db, cf_resource: cf}, mode) do
+    with {:ok, resource} = Native.iterate_cf(db, cf, mode) do
+      Cursor.wrap_resource(resource, mode, decode_values: false)
+      |> Stream.map(&elem(&1, 0))
+    end
+  end
+
+
+  @doc """
   Return the approximate number of keys in the database or specified column family.
 
   Implemented by calling GetIntProperty with `rocksdb.estimate-num-keys`
