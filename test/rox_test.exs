@@ -48,6 +48,16 @@ defmodule RoxTest do
       assert length(items) > 10
     end
 
+    test "stream_keys", %{db: db} do
+      Enum.each(0..9, & :ok = Rox.put(db, to_string(&1), &1))
+
+      items =
+        Rox.stream_keys(db, {:from, "0", :forward})
+        |> Enum.take(10)
+
+      assert ~w(0 1 2 3 4 5 6 7 8 9) == items
+    end
+
     test "delete", %{db: db} do
       assert :not_found = Rox.get(db, "delete_test")
       assert :ok = Rox.put(db, "delete_test", "some_val")

@@ -1,21 +1,24 @@
 defmodule Rox.Cursor do
   @moduledoc """
   Struct module representing a cursor for the Rox database
-  
+
   """
+
+  @type options :: [option]
+  @type option :: {:decode_values, boolean}
 
   @typedoc "A cursor for iterating over a database or column family"
   @type t :: %__MODULE__{
-    resource: binary, mode: mode
+    resource: binary, mode: mode, options: options
   }
 
-  defstruct [:resource, :mode]
+  defstruct [:resource, :mode, :options]
 
   @type mode :: :start | :end | {:from, Rox.key, :forward | :backward}
 
   @doc false
-  def wrap_resource(resource, mode) do
-    %__MODULE__{resource: resource, mode: mode}
+  def wrap_resource(resource, mode, options \\ []) do
+    %__MODULE__{resource: resource, mode: mode, options: options}
   end
 
 
@@ -39,7 +42,7 @@ defmodule Rox.Cursor do
     def reduce(%Cursor{} = cursor, {:suspend, acc}, fun) do
       {:suspended, acc, &reduce(cursor, &1, fun)}
     end
-    def reduce(%Cursor{resource: raw, mode: mode} = cursor, {:cont, acc}, fun) do
+    def reduce(%Cursor{resource: raw, mode: mode, options: options} = cursor, {:cont, acc}, fun) do
       case Native.iterator_next(raw) do
         :done ->
           Native.iterator_reset(raw, mode)
@@ -47,7 +50,7 @@ defmodule Rox.Cursor do
 
         {key, value} ->
           value =
-            Utils.decode(value)
+            if options[:decode_values] == false, do: value, else: Utils.decode(value)
 
           reduce(cursor, fun.({key, value}, acc), fun)
       end
