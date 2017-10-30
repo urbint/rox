@@ -1,4 +1,11 @@
 
+2.1.0 / 2017-10-30
+==================
+
+  * deps(): Update dependency on `rust_rocksdb`
+  * feat(): Add `Rox.stream_keys/2`
+  * feat(options): add `use_direct_io_for_flush_and_compaction`
+
 2.0.0 / 2017-08-29
 ==================
 
