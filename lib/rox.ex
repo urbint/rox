@@ -105,10 +105,11 @@ defmodule Rox do
         # First try opening with existing column families
         with {:ok, db}         <- Native.open(path, to_map(db_opts), column_families),
                    db          <- DB.wrap_resource(db),
-             {:ok, cf_handles} <- map_or_error(column_families, &cf_handle(db, &1)) do
+             cf_names          =  do_column_family_names(column_families),
+             {:ok, cf_handles} <- map_or_error(cf_names, &cf_handle(db, &1)) do
 
             cf_map =
-              Enum.zip(column_families, cf_handles)
+              Enum.zip(cf_names, cf_handles)
               |> Enum.into(%{})
 
             {:ok, db, cf_map}
@@ -129,14 +130,29 @@ defmodule Rox do
 
   defp do_open_db_and_create_cfs(path, opts, column_families) do
     with {:ok, db} <- do_open_db_with_no_cf(path, opts),
-         {:ok, cf_handles} <- map_or_error(column_families, &create_cf(db, &1, opts)) do
+         {:ok, cf_handles} <- map_or_error(column_families, fn
+           {name, cf_opts}           -> create_cf(db, name, cf_opts)
+           name when is_binary(name) -> create_cf(db, name, opts)
+         end) do
 
       cf_map =
-        Enum.zip(column_families, cf_handles)
+        column_families
+        |> Stream.map(fn
+           {name, _cf_opts}          -> name
+           name when is_binary(name) -> name
+        end)
+        |> Stream.zip(cf_handles)
         |> Enum.into(%{})
 
       {:ok, db, cf_map}
     end
+  end
+
+  defp do_column_family_names(column_families) do
+    Enum.map(column_families, fn
+      {name, _cf_opts}          -> name
+      name when is_binary(name) -> name
+    end)
   end
 
   @doc """
@@ -262,6 +278,27 @@ defmodule Rox do
 
 
   @doc """
+  TODO
+  """
+  def stream_prefix(db_or_cf, prefix)
+  def stream_prefix(%DB{resource: db}, prefix) do
+    with {:ok, resource} <- Native.iterate_prefix(db, prefix) do
+      Cursor.wrap_resource(resource, :start)
+    end
+  end
+  def stream_prefix(%ColumnFamily{db_resource: db, cf_resource: cf}, prefix) do
+    with {:ok, resource} = Native.iterate_cf_prefix(db, cf, prefix) do
+      Cursor.wrap_resource(resource, :start)
+    end
+  end
+  def stream_prefix(%Snapshot{resource: snapshot}, prefix) do
+    with {:ok, resource} <- Native.iterate_prefix(snapshot, prefix) do
+      Cursor.wrap_resource(resource, :start)
+    end
+  end
+
+
+  @doc """
   Returns a `Cursor.t` which will iterate *keys* from the provided database or column family.
 
   Optionally takes a `Rox.Cursor.mode`, which defaults to `:start`.
@@ -289,9 +326,7 @@ defmodule Rox do
 
 
   @doc """
-  Return the approximate number of keys in the database or specified column family.
-
-  Implemented by calling GetIntProperty with `rocksdb.estimate-num-keys`
+  Return the number of keys in the database or specified column family.
 
   """
   @spec count(DB.t | ColumnFamily.t) :: non_neg_integer | {:error, any}
@@ -300,6 +335,18 @@ defmodule Rox do
   end
   def count(%ColumnFamily{db_resource: db, cf_resource: cf}) do
     Native.count_cf(db, cf)
+  end
+
+  @doc """
+  Returns the number of keys with the given *prefix* in the given database or column family.
+
+  """
+  @spec count_prefix(DB.t | ColumnFamily.t, prefix :: binary) :: non_neg_integer | {:error, any}
+  def count_prefix(%DB{resource: db}, prefix) do
+    Native.count_prefix(db, prefix)
+  end
+  def count_prefix(%ColumnFamily{db_resource: db, cf_resource: cf}, prefix) do
+    Native.count_prefix_cf(db, cf, prefix)
   end
 
 

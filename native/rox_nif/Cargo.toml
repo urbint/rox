@@ -11,6 +11,6 @@ crate-type = ["dylib"]
 [dependencies]
 rustler = "^0.15"
 rustler_codegen = "^0.15"
-rocksdb = { git = "https://github.com/urbint/rust-rocksdb.git" }
+rocksdb = { git = "https://github.com/urbint/rust-rocksdb", branch="test-prefix-iterators" }
 
 lazy_static = "*"

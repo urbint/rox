@@ -26,6 +26,20 @@ defmodule Rox.Native do
     end
   end
 
+  def count_prefix(_, _) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> 0
+    end
+  end
+
+  def count_prefix_cf(_, _, _) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> 0
+    end
+  end
+
   def count_cf(_, _) do
     case :erlang.phash2(1, 1) do
       0 -> raise "Nif not loaded"
@@ -98,7 +112,21 @@ defmodule Rox.Native do
     end
   end
 
+  def iterate_prefix(_, _) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> {:ok, ""}
+    end
+  end
+
   def iterate_cf(_, _, _) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> {:ok, ""}
+    end
+  end
+
+  def iterate_cf_prefix(_, _, _) do
     case :erlang.phash2(1, 1) do
       0 -> raise "Nif not loaded"
       1 -> {:ok, ""}

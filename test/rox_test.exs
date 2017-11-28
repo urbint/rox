@@ -11,7 +11,7 @@ defmodule RoxTest do
       Rox.open(path, [create_if_missing: true, auto_create_column_families: true], ["people"])
 
     on_exit fn ->
-      File.rm_rf(path)
+      File.rm_rf!(path)
       :ok
     end
 
@@ -68,6 +68,111 @@ defmodule RoxTest do
     end
   end
 
+  describe "Working with prefixes in the default DB" do
+    setup do
+      id =
+        :rand.uniform(1_000)
+      path =
+        Path.join(__DIR__, "test.rocksdb.prefixes.#{id}")
+
+      {:ok, db} =
+        Rox.open(path, fixed_prefix_length: 3, create_if_missing: true)
+
+      on_exit fn ->
+        File.rm_rf!(path)
+        :ok
+      end
+
+      {:ok, %{db: db}}
+    end
+
+    test "stream_prefix", %{db: db} do
+      a_items =
+        Enum.map(0..9, &{"aaa#{&1}", &1})
+
+      Enum.each(a_items, fn {k, v} -> :ok = Rox.put(db, k, v) end)
+      Enum.each(0..9, & :ok = Rox.put(db, "bbb#{&1}", &1))
+
+      result =
+        Rox.stream_prefix(db, "aaa")
+        |> Enum.take(10)
+
+      assert a_items == result
+    end
+
+    test "count_prefix", %{db: db} do
+      Enum.each(0..9, & :ok = Rox.put(db, "ccc#{&1}", &1))
+      Enum.each(0..9, & :ok = Rox.put(db, "ddd#{&1}", &1))
+
+      assert 10 == Rox.count_prefix(db, "ccc")
+    end
+  end
+
+  describe "Working with prefixes in column families" do
+    setup do
+      id =
+        :rand.uniform(1_000)
+      path =
+        Path.join(__DIR__, "test.rocksdb.prefixes.cfs.#{id}")
+
+      {:ok, db, %{"people" => people}} =
+        Rox.open(
+          path,
+          [fixed_prefix_length: 3, create_if_missing: true, auto_create_column_families: true],
+          [{"people", fixed_prefix_length: 4}]
+        )
+
+      on_exit fn ->
+        File.rm_rf!(path)
+        :ok
+      end
+
+      {:ok, %{db: db, people: people}}
+    end
+
+    test "stream_prefix on the default db", %{db: db} do
+      a_items =
+        Enum.map(0..9, &{"aaa#{&1}", &1})
+
+      Enum.each(a_items, fn {k, v} -> :ok = Rox.put(db, k, v) end)
+      Enum.each(0..9, & :ok = Rox.put(db, "bbb#{&1}", &1))
+
+      result =
+        Rox.stream_prefix(db, "aaa")
+        |> Enum.take(10)
+
+      assert a_items == result
+    end
+
+    test "count_prefix on the default db", %{db: db} do
+      Enum.each(0..9, & :ok = Rox.put(db, "ccc#{&1}", &1))
+      Enum.each(0..9, & :ok = Rox.put(db, "ddd#{&1}", &1))
+
+      assert 10 == Rox.count_prefix(db, "ccc")
+    end
+
+    test "stream_prefix on a column family", %{people: people} do
+      a_items =
+        Enum.map(0..9, &{"aaaa#{&1}", &1})
+
+      Enum.each(a_items, fn {k, v} -> :ok = Rox.put(people, k, v) end)
+      Enum.each(0..9, & :ok = Rox.put(people, "bbbb#{&1}", &1))
+
+      result =
+        Rox.stream_prefix(people, "aaaa")
+        |> Enum.take(10)
+
+      assert a_items == result
+    end
+
+    test "count_prefix on a column family", %{people: people} do
+      Enum.each(0..9, & :ok = Rox.put(people, "cccc#{&1}", &1))
+      Enum.each(0..9, & :ok = Rox.put(people, "dddd#{&1}", &1))
+
+      assert 10 == Rox.count_prefix(people, "cccc")
+    end
+  end
+
   describe "Working with non-default column family" do
     test "simple put and get", %{people: people} do
       assert :not_found = Rox.get(people, "put_test")
@@ -98,7 +203,24 @@ defmodule RoxTest do
   end
 
   describe "snapshots" do
-    setup %{db: db, people: people} do
+    setup do
+      id =
+        :rand.uniform(1_000)
+      path =
+        Path.join(__DIR__, "test.rocksdb.prefixes.#{id}")
+
+      {:ok, db, %{"people" => people}} =
+        Rox.open(path,
+                 [fixed_prefix_length: 2,
+                  create_if_missing: true,
+                  auto_create_column_families: true],
+                 [{"people", fixed_prefix_length: 2}])
+
+      on_exit fn ->
+        File.rm_rf!(path)
+        :ok
+      end
+
       :ok = Rox.put(db, "snapshot_read_test", "some_val")
       Enum.each((1..9), & :ok = Rox.put(db, "zz#{&1}", &1))
 
@@ -107,7 +229,7 @@ defmodule RoxTest do
       {:ok, snapshot} =
         Rox.create_snapshot(db)
 
-      {:ok, %{snapshot: snapshot}}
+      {:ok, %{db: db, snapshot: snapshot}}
     end
 
     test "snapshots can be read from", %{snapshot: snapshot} do
@@ -145,6 +267,23 @@ defmodule RoxTest do
 
       assert :ok = Rox.put(people, "goedel", "uncertain")
       assert {:ok, "unsure"} = Rox.get(people_snap, "goedel")
+    end
+
+    test "snapshots can read prefixes", %{snapshot: snapshot} do
+      stream =
+        Rox.stream_prefix(snapshot, "zz")
+
+      assert Enum.to_list(1..9) == Enum.map(stream, &elem(&1, 1))
+    end
+
+    test "snapshots can read column family prefixes", %{snapshot: snapshot} do
+      {:ok, cf} =
+        Rox.cf_handle(snapshot, "people")
+
+      stream =
+        Rox.stream_prefix(cf, "go")
+
+      assert [{"goedel", "unsure"}] == Enum.to_list(stream)
     end
   end
 

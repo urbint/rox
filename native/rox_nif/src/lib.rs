@@ -7,7 +7,7 @@ extern crate rocksdb;
 use std::path::Path;
 use std::ops::Deref;
 use std::io::Write;
-use std::sync::{RwLock,Arc};
+use std::sync::{RwLock, Arc};
 
 use rustler::resource::ResourceArc;
 
@@ -21,7 +21,7 @@ use rustler::types::atom::{NifAtom};
 use rustler::types::list::NifListIterator;
 use rocksdb::{
     DB, IteratorMode, Options, Snapshot, DBCompressionType, WriteOptions,
-    ColumnFamily, Direction, DBIterator, WriteBatch
+    ColumnFamily, Direction, DBIterator, WriteBatch, SliceTransform
 };
 
 
@@ -154,6 +154,7 @@ mod atoms {
         // atom skip_stats_update_on_db_open;
         // atom wal_recovery_mode;
         atom use_direct_io_for_flush_and_compaction;
+        atom fixed_prefix_length;
 
         // Read Options
         // atom fill_cache;
@@ -331,6 +332,30 @@ impl <'a> NifDecoder<'a> for BatchOperation<'a> {
     }
 }
 
+struct ColumnFamilyDescriptor(pub rocksdb::ColumnFamilyDescriptor);
+
+impl ColumnFamilyDescriptor {
+    pub fn new(name: String, options: Options) -> Self {
+        ColumnFamilyDescriptor(rocksdb::ColumnFamilyDescriptor::new(name, options))
+    }
+}
+
+impl<'a> NifDecoder<'a> for ColumnFamilyDescriptor {
+    fn decode(term: NifTerm<'a>) -> NifResult<Self> {
+        term.decode().map(|cf_name| {
+            let options = Options::default();
+
+            ColumnFamilyDescriptor::new(cf_name, options)
+        }).or_else(|_| {
+            let env = term.get_env();
+            let (cf_name, options_term) = term.decode()?;
+            let options = decode_db_options(env, options_term)?;
+
+            Ok(ColumnFamilyDescriptor::new(cf_name, options))
+        })
+    }
+}
+
 macro_rules! handle_error {
     ($env:expr, $e:expr) => {
         match $e {
@@ -489,6 +514,10 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
             opts.set_use_direct_io_for_flush_and_compaction(enabled.decode()?);
         }
 
+    if let Ok(fixed_prefix_length) = arg.map_get(atoms::fixed_prefix_length().to_term(env)) {
+        opts.set_prefix_extractor(SliceTransform::fixed_prefix(fixed_prefix_length.decode()?))
+    }
+
     Ok(opts)
 }
 
@@ -534,20 +563,20 @@ fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
             Options::default()
         };
 
-    let cf: Vec<&str> =
+    let cf: Vec<rocksdb::ColumnFamilyDescriptor> =
         if args[2].list_length()? == 0 {
             vec![]
         } else {
             let iter: NifListIterator = args[2].decode()?;
-            let result: Vec<&str> =
-                try!(iter
-                .map(|x| x.decode())
-                .collect::<NifResult<Vec<&str>>>());
-
-            result
+            try!(iter
+                 .map(|x| {
+                     let ColumnFamilyDescriptor(rocksdb_cf) = x.decode()?;
+                     Ok(rocksdb_cf)
+                 })
+                 .collect::<NifResult<Vec<rocksdb::ColumnFamilyDescriptor>>>())
         };
 
-    let db: DB = handle_error!(env, DB::open_cf(&db_opts, path, &cf));
+    let db: DB = handle_error!(env, DB::open_cf_descriptors(&db_opts, path, cf));
 
     let resp =
         (atoms::ok(), ResourceArc::new(DBHandle{
@@ -579,6 +608,17 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     Ok((count as u64).encode(env))
 }
 
+fn count_prefix<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let prefix: NifBinary = args[1].decode()?;
+
+    let db_handle = db_arc.deref();
+    let iterator = db_handle.db.read().unwrap().prefix_iterator(prefix.as_slice());
+    let count = iterator.count();
+
+    Ok((count as u64).encode(env))
+}
+
 fn count_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
@@ -586,11 +626,27 @@ fn count_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>>
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
 
-
     let iterator = handle_error!(env, db_handle.db.read().unwrap().iterator_cf(cf, IteratorMode::Start));
 
     let count = iterator.count();
 
+
+    Ok((count as u64).encode(env))
+}
+
+fn count_prefix_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
+    let prefix: NifBinary = args[2].decode()?;
+
+    let db_handle = db_arc.deref();
+    let cf = cf_arc.deref().cf;
+
+    let iterator = handle_error!(
+        env,
+        db_handle.db.read().unwrap().prefix_iterator_cf(cf, prefix.as_slice()));
+
+    let count = iterator.count();
 
     Ok((count as u64).encode(env))
 }
@@ -774,6 +830,16 @@ fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     }
 }
 
+fn return_iterator_handle<'a>(iter: DBIterator,
+                              db_ref: DatabaseRef,
+                              env: &NifEnv<'a>
+                             ) -> NifTerm<'a> {
+    (atoms::ok(), ResourceArc::new(IteratorHandle{
+        iter: RwLock::new(iter),
+        db:   db_ref,
+    })).encode(*env)
+}
+
 fn iterate<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let (iter, db_ref) =
         args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
@@ -791,13 +857,29 @@ fn iterate<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> 
             ))
         })?;
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(IteratorHandle{
-            iter: RwLock::new(iter),
-            db: db_ref,
-        })).encode(env);
+    Ok(return_iterator_handle(iter, db_ref, &env))
+}
 
-    Ok(resp)
+fn iterate_prefix<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let prefix = args[1].decode::<NifBinary>()?.as_slice();
+
+    let (iter, db_ref) =
+        args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
+            let db = db_arc.db.read().unwrap();
+            Ok((
+                db.prefix_iterator(prefix),
+                DatabaseRef::from(&db_arc.db)
+            ))
+        }).or_else(|_| {
+            let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
+            Ok((
+                snapshot_arc.snapshot.snapshot.as_ref().unwrap()
+                    .prefix_iterator(prefix),
+                DatabaseRef::from(&snapshot_arc.snapshot)
+            ))
+        })?;
+
+    Ok(return_iterator_handle(iter, db_ref, &env))
 }
 
 fn iterate_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
@@ -821,13 +903,32 @@ fn iterate_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a
 
     let iter = handle_error!(env, iter_res);
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(IteratorHandle{
-            iter: RwLock::new(iter),
-            db: db_ref,
-        })).encode(env);
+    Ok(return_iterator_handle(iter, db_ref, &env))
+}
 
-    Ok(resp)
+fn iterate_cf_prefix<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let cf     = args[1].decode::<ResourceArc<CFHandle>>()?.cf;
+    let prefix = args[2].decode::<NifBinary>()?.as_slice();
+
+    let (iter_res, db_ref) =
+        args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
+            let db = db_arc.db.read().unwrap();
+            Ok((
+                db.prefix_iterator_cf(cf, prefix),
+                DatabaseRef::from(&db_arc.db)
+            ))
+        }).or_else(|_| {
+            let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
+            Ok((
+                snapshot_arc.snapshot.snapshot.as_ref().unwrap()
+                    .prefix_iterator_cf(cf, prefix),
+                DatabaseRef::from(&snapshot_arc.snapshot)
+            ))
+        })?;
+
+    let iter = handle_error!(env, iter_res);
+
+    Ok(return_iterator_handle(iter, db_ref, &env))
 }
 
 fn iterator_next<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
@@ -896,9 +997,13 @@ rustler_export_nifs!(
     ("delete", 3, delete),
     ("delete_cf", 4, delete_cf),
     ("count", 1, count),
+    ("count_prefix", 2, count_prefix),
+    ("count_prefix_cf", 3, count_prefix_cf),
     ("count_cf", 2, count_cf),
     ("iterate", 2, iterate),
+    ("iterate_prefix", 2, iterate_prefix),
     ("iterate_cf", 3, iterate_cf),
+    ("iterate_cf_prefix", 3, iterate_cf_prefix),
     ("iterator_next", 1, iterator_next),
     ("iterator_reset", 2, iterator_reset),
     ("get", 3, get),
