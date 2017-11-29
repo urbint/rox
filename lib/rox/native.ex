@@ -11,6 +11,14 @@ defmodule Rox.Native do
     end
   end
 
+  def create_snapshot(_) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> {:ok, ""}
+      2 -> {:error, ""}
+    end
+  end
+
   def count(_) do
     case :erlang.phash2(1, 1) do
       0 -> raise "Nif not loaded"

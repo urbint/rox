@@ -1,10 +1,10 @@
 defmodule Rox.DB do
   @moduledoc """
   Struct module representing a handle for a database.
-  
+
   For working with the database, see the functions in the top
   level `Rox` module.
-  
+
   Implements the `Collectable` and `Enumerable` protocols.
 
   """
