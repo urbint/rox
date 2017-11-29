@@ -4,7 +4,7 @@ defmodule Rox do
 
   """
 
-  alias __MODULE__.{DB,ColumnFamily,Native,Utils,Cursor}
+  alias __MODULE__.{DB, ColumnFamily, Native, Utils, Cursor, Snapshot}
 
   @type compaction_style :: :level | :universal | :fifo | :none
   @type compression_type :: :snappy | :zlib | :bzip2 | :lz4 | :lz4h | :none
@@ -140,6 +140,20 @@ defmodule Rox do
   end
 
   @doc """
+  Creates a point-in-time snapshot of the given `DB`.
+
+  Snapshots are read only views of the database at a point in time - no changes to the database will
+  be reflected in the view of the snapshot.
+
+  """
+  @spec create_snapshot(DB.t) :: {:ok, Snapshot.t} | {:error, any}
+  def create_snapshot(db) do
+    with {:ok, snapshot} <- Native.create_snapshot(db.resource) do
+      {:ok, Snapshot.wrap_resource(db, snapshot)}
+    end
+  end
+
+  @doc """
   Create a column family in `db` with `name` and `opts`.
 
   """
@@ -151,15 +165,21 @@ defmodule Rox do
   end
 
   @doc """
-  Gets an existing `ColumnFamily.t` from the database.
+  Gets an existing `ColumnFamily.t` from the database or snapshot.
 
-  The column family must have been created via `create_cf/2` or from `open/3` with the `auto_create_column_families` option.
+  The column family must have been created via `create_cf/2` or from `open/3` with the
+  `auto_create_column_families` option.
 
   """
-  @spec cf_handle(DB.t, ColumnFamily.name) :: {:ok, ColumnFamily.t} | {:error, any}
+  @spec cf_handle(DB.t | Snapshot.t, ColumnFamily.name) :: {:ok, ColumnFamily.t} | {:error, any}
   def cf_handle(%DB{resource: raw_db} = db, name) do
     with {:ok, result} <- Native.cf_handle(raw_db, name) do
       {:ok, ColumnFamily.wrap_resource(db, result, name)}
+    end
+  end
+  def cf_handle(%Snapshot{db: %DB{resource: raw_db}} = snapshot, name) do
+    with {:ok, result} <- Native.cf_handle(raw_db, name) do
+      {:ok, ColumnFamily.wrap_resource(snapshot, result, name)}
     end
   end
 
@@ -181,21 +201,29 @@ defmodule Rox do
 
 
   @doc """
-  Get a key/value pair in the databse or column family with the specified `key`.
+  Get a key/value pair in the given column family of the given snapshot or database with the
+  specified `key`.
 
   Optionally takes a list of `read_options`.
 
   For non-binary terms that were stored, they will be automatically decoded.
 
   """
-  @spec get(DB.t | ColumnFamily.t, key, read_options) :: {:ok, binary} | {:ok, value} | :not_found | {:error, any}
-  def get(db_or_cf, key, opts \\ [])
+  @spec get(DB.t | ColumnFamily.t | Snapshot.t, key, read_options)
+    :: {:ok, value}
+     | :not_found
+     | {:error, any}
+  def get(db_snapshot_or_cf, key, opts \\ [])
   def get(%DB{resource: db}, key, opts) when is_binary(key) and is_list(opts) do
     Native.get(db, key, to_map(opts))
     |> Utils.decode
   end
   def get(%ColumnFamily{db_resource: db, cf_resource: cf}, key, opts) when is_binary(key) and is_list(opts) do
     Native.get_cf(db, cf, key, to_map(opts))
+    |> Utils.decode
+  end
+  def get(%Snapshot{resource: snapshot}, key, opts) when is_binary(key) and is_list(opts) do
+    Native.get(snapshot, key, to_map(opts))
     |> Utils.decode
   end
 
@@ -223,6 +251,11 @@ defmodule Rox do
   end
   def stream(%ColumnFamily{db_resource: db, cf_resource: cf}, mode) do
     with {:ok, resource} = Native.iterate_cf(db, cf, mode) do
+      Cursor.wrap_resource(resource, mode)
+    end
+  end
+  def stream(%Snapshot{resource: snapshot}, mode) do
+    with {:ok, resource} <- Native.iterate(snapshot, mode) do
       Cursor.wrap_resource(resource, mode)
     end
   end

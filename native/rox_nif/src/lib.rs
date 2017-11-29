@@ -20,7 +20,7 @@ use rustler::types::binary::{NifBinary,OwnedNifBinary};
 use rustler::types::atom::{NifAtom};
 use rustler::types::list::NifListIterator;
 use rocksdb::{
-    DB, IteratorMode, Options, DBCompressionType, WriteOptions,
+    DB, IteratorMode, Options, Snapshot, DBCompressionType, WriteOptions,
     ColumnFamily, Direction, DBIterator, WriteBatch
 };
 
@@ -166,27 +166,123 @@ mod atoms {
     }
 }
 
+struct SnapshotWrapper {
+    pub snapshot: Option<Snapshot<'static>>,
+
+    #[allow(dead_code)] db: Arc<RwLock<DB>>
+}
+
+unsafe impl Sync for SnapshotWrapper {}
+unsafe impl Send for SnapshotWrapper {}
+
+unsafe fn shorten_snapshot<'a>(s: Snapshot<'static>) -> Snapshot<'a> {
+    // More dragons: After working mad science to lengthen the lifetime of the snapshot struct when
+    // creating it, we need to *shorten* its lifetime when its surrounding handle is being dropped,
+    // to avoid memory leaks
+    std::mem::transmute(s)
+}
+
+impl Deref for SnapshotWrapper {
+    type Target = Snapshot<'static>;
+
+    fn deref(&self) -> &Self::Target {
+        self.snapshot.as_ref().expect(
+            "Invariant violation: Attempting to use a freed snapshot handle. Good luck.")
+    }
+}
+
+impl Drop for SnapshotWrapper {
+    fn drop(&mut self) {
+        let snapshot = std::mem::replace(&mut self.snapshot, None).expect(
+            "Invariant violation: Dropping a snapshot handle that's already been dropped.");
+        unsafe { shorten_snapshot(snapshot) };
+    }
+}
+
+struct SnapshotHandle {
+    pub snapshot: Arc<SnapshotWrapper>
+}
+
+unsafe impl Sync for SnapshotHandle {}
+unsafe impl Send for SnapshotHandle {}
+
+impl SnapshotHandle {
+    fn new<'a>(db: &DBHandle) -> Self {
+        let read_db = db.read().unwrap();
+        let snapshot = read_db.snapshot();
+
+        // here be dragons!
+        // The rocksdb snapshot type is (rightfully) parametrized to have the
+        // same lifetime as its owning DB - this doesn't work for us, however, as we're not using
+        // Rust lifetimes at *all* to control the lifetime of our values - instead, we rely
+        // entirely on reference counting and the Erlang garbage collector to free variables.
+        // Extending this lifetime to static essentially tells Rust to let it live forever, and
+        // it'll be dropped on its own by the GC handling inside Rustler.
+        let eternal_snapshot: Snapshot<'static> = unsafe { std::mem::transmute(snapshot) };
+
+        let wrapper = SnapshotWrapper{
+            snapshot: Some(eternal_snapshot),
+            db: db.deref().clone()
+        };
+
+        SnapshotHandle {
+            snapshot: Arc::new(wrapper)
+        }
+    }
+}
+
+impl Deref for SnapshotHandle {
+    type Target = SnapshotWrapper;
+
+    fn deref(&self) -> &Self::Target { self.snapshot.deref() }
+}
+
+
 struct DBHandle {
     pub db: Arc<RwLock<DB>>,
 }
 
-#[allow(dead_code)]
+impl Deref for DBHandle {
+    type Target = Arc<RwLock<DB>>;
+
+    fn deref(&self) -> &Self::Target { &self.db }
+}
+
+///
+/// Struct representing a held reference to a database for use in refcount pools.
+///
+/// CFHandle, IteratorHandle, etc need to hold onto these references to prevent the parent database
+/// from being dropped before the dependent child objects are
+///
+enum DatabaseRef {
+    DB(Arc<RwLock<DB>>),
+    Snapshot(Arc<SnapshotWrapper>),
+}
+
+impl<'a> From<&'a Arc<RwLock<DB>>> for DatabaseRef {
+    fn from(db: &Arc<RwLock<DB>>) -> Self { DatabaseRef::DB(db.clone()) }
+}
+
+impl<'a> From<&'a Arc<SnapshotWrapper>> for DatabaseRef {
+    fn from(snapshot: &Arc<SnapshotWrapper>) -> Self { DatabaseRef::Snapshot(snapshot.clone()) }
+}
+
 struct CFHandle {
     pub cf: ColumnFamily,
-    db: Arc<RwLock<DB>>, // Keep a reference to the DB to prevent segfault bug in Rocks/Rust bindings
+    #[allow(dead_code)] db: DatabaseRef,
 }
 
 unsafe impl Sync for CFHandle {}
 unsafe impl Send for CFHandle {}
 
-#[allow(dead_code)]
 struct IteratorHandle {
     pub iter: RwLock<DBIterator>,
-    db: Arc<RwLock<DB>>, // Keep a reference to the DB to prevent segfault bug in Rocks/Rust bindings
+    #[allow(dead_code)] db: DatabaseRef,
 }
 
 unsafe impl Sync for IteratorHandle {}
 unsafe impl Send for IteratorHandle {}
+
 
 struct CompressionType {
     pub raw: DBCompressionType
@@ -310,6 +406,7 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
     }
 
     if let Ok(allow_os_buffer) = arg.map_get(atoms::allow_os_buffer().to_term(env)) {
+        #[allow(deprecated)]
         opts.set_allow_os_buffer(allow_os_buffer.decode()?);
     }
 
@@ -460,6 +557,16 @@ fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     Ok(resp)
 }
 
+fn create_snapshot<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db_handle = db_arc.deref();
+
+    let resp =
+        (atoms::ok(), ResourceArc::new(SnapshotHandle::new(db_handle))).encode(env);
+
+    Ok(resp)
+}
+
 fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
@@ -501,7 +608,10 @@ fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
     let cf = handle_error!(env, db.create_cf(name, &opts));
 
     let resp =
-        (atoms::ok(), ResourceArc::new(CFHandle{cf: cf, db: db_arc.db.clone()})).encode(env);
+        (atoms::ok(), ResourceArc::new(CFHandle{
+            cf: cf,
+            db: DatabaseRef::from(&db_arc.db)
+        })).encode(env);
 
     Ok(resp)
 }
@@ -513,7 +623,10 @@ fn cf_handle<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
     let name: &str = args[1].decode()?;
 
     match db.cf_handle(name) {
-        Some(cf) => Ok((atoms::ok(), ResourceArc::new(CFHandle{cf: cf, db: db_arc.db.clone()})).encode(env)),
+        Some(cf) => Ok((atoms::ok(), ResourceArc::new(CFHandle{
+            cf: cf,
+            db: DatabaseRef::from(&db_arc.db),
+        })).encode(env)),
         None => Ok((atoms::error(), format!("Could not find ColumnFamily named {}", name)).encode(env))
     }
 }
@@ -611,14 +724,16 @@ fn delete_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
 }
 
 fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.deref().db.read().unwrap();
-
-    let key: NifBinary = args[1].decode()?;
+    let key = args[1].decode::<NifBinary>()?.as_slice();
 
     let resp =
-        db.get(key.as_slice());
-
+        args[0].decode::<ResourceArc<DBHandle>>().map(|db_arc| {
+            let db = db_arc.db.read().unwrap();
+            db.get(key)
+        }).or_else(|_| {
+            let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
+            Ok(snapshot_arc.get(key))
+        })?;
 
     let val_option = handle_error!(env, resp);
 
@@ -634,16 +749,17 @@ fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 }
 
 fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.db.read().unwrap();
-
-    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
-    let cf = cf_arc.cf;
-
-    let key: NifBinary = args[2].decode()?;
+    let cf = args[1].decode::<ResourceArc<CFHandle>>()?.cf;
+    let key = args[2].decode::<NifBinary>()?.as_slice();
 
     let resp =
-        db.get_cf(cf, key.as_slice());
+        args[0].decode::<ResourceArc<DBHandle>>().map(|db_arc| {
+            let db = db_arc.db.read().unwrap();
+            db.get_cf(cf, key)
+        }).or_else(|_| {
+            let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
+            Ok(snapshot_arc.get_cf(cf, key))
+        })?;
 
     let val_option = handle_error!(env, resp);
 
@@ -659,36 +775,56 @@ fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 }
 
 fn iterate<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.db.read().unwrap();
-    let iterator_mode = decode_iterator_mode(args[1])?;
-
-    let iter = db.iterator(iterator_mode);
+    let (iter, db_ref) =
+        args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
+            let db = db_arc.db.read().unwrap();
+            Ok((
+                db.iterator(decode_iterator_mode(args[1])?),
+                DatabaseRef::from(&db_arc.db)
+            ))
+        }).or_else(|_| {
+            let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
+            Ok((
+                snapshot_arc.snapshot.snapshot.as_ref().unwrap()
+                    .iterator(decode_iterator_mode(args[1])?),
+                DatabaseRef::from(&snapshot_arc.snapshot)
+            ))
+        })?;
 
     let resp =
         (atoms::ok(), ResourceArc::new(IteratorHandle{
             iter: RwLock::new(iter),
-            db: db_arc.db.clone(),
+            db: db_ref,
         })).encode(env);
 
     Ok(resp)
 }
 
 fn iterate_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.db.read().unwrap();
+    let cf = args[1].decode::<ResourceArc<CFHandle>>()?.cf;
 
-    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
-    let cf = cf_arc.cf;
+    let (iter_res, db_ref) =
+        args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
+            let db = db_arc.db.read().unwrap();
+            Ok((
+                db.iterator_cf(cf, decode_iterator_mode(args[2])?),
+                DatabaseRef::from(&db_arc.db)
+            ))
+        }).or_else(|_| {
+            let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
+            Ok((
+                snapshot_arc.snapshot.snapshot.as_ref().unwrap()
+                    .iterator_cf(cf, decode_iterator_mode(args[2])?),
+                DatabaseRef::from(&snapshot_arc.snapshot)
+            ))
+        })?;
 
-    let iterator_mode = decode_iterator_mode(args[2])?;
-
-    let iter = handle_error!(env, db.iterator_cf(cf, iterator_mode));
+    let iter = handle_error!(env, iter_res);
 
     let resp =
         (atoms::ok(), ResourceArc::new(IteratorHandle{
             iter: RwLock::new(iter),
-            db: db_arc.db.clone(),
+            db: db_ref,
         })).encode(env);
 
     Ok(resp)
@@ -752,6 +888,7 @@ fn batch_write<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'
 rustler_export_nifs!(
     "Elixir.Rox.Native",
     [("open", 3, open),
+    ("create_snapshot", 1, create_snapshot),
     ("create_cf", 3, create_cf),
     ("cf_handle", 2, cf_handle),
     ("put", 4, put),
@@ -774,5 +911,7 @@ fn on_load<'a>(env: NifEnv<'a>, _load_info: NifTerm<'a>) -> bool {
     resource_struct_init!(DBHandle, env);
     resource_struct_init!(CFHandle, env);
     resource_struct_init!(IteratorHandle, env);
+    resource_struct_init!(SnapshotWrapper, env);
+    resource_struct_init!(SnapshotHandle, env);
     true
 }

@@ -97,6 +97,57 @@ defmodule RoxTest do
     end
   end
 
+  describe "snapshots" do
+    setup %{db: db, people: people} do
+      :ok = Rox.put(db, "snapshot_read_test", "some_val")
+      Enum.each((1..9), & :ok = Rox.put(db, "zz#{&1}", &1))
+
+      :ok = Rox.put(people, "goedel", "unsure")
+
+      {:ok, snapshot} =
+        Rox.create_snapshot(db)
+
+      {:ok, %{snapshot: snapshot}}
+    end
+
+    test "snapshots can be read from", %{snapshot: snapshot} do
+      assert {:ok, "some_val"} == Rox.get(snapshot, "snapshot_read_test")
+    end
+
+    test "snapshots allow streaming", %{snapshot: snapshot} do
+      assert cursor =
+        Rox.stream(snapshot, {:from, "zz", :forward})
+
+      assert Enum.to_list(1..9) == cursor |> Enum.take(9) |> Enum.map(&elem(&1, 1))
+    end
+
+    test "snapshots don't see updates to the base db", %{snapshot: snapshot, db: db} do
+      assert :not_found = Rox.get(snapshot, "snapshot_put_test")
+      assert :ok = Rox.put(db, "snapshot_put_test", "some_val")
+      assert {:ok, "some_val"} = Rox.get(db, "snapshot_put_test")
+      assert :not_found = Rox.get(snapshot, "snapshot_put_test")
+    end
+
+    test "snapshots allow reading from column families", %{snapshot: snapshot} do
+      {:ok, cf} =
+        Rox.cf_handle(snapshot, "people")
+
+      assert {:ok, "unsure"} = Rox.get(cf, "goedel")
+    end
+
+    test "snapshots don't see updates to column families", %{snapshot: snapshot, people: people} do
+      {:ok, people_snap} =
+        Rox.cf_handle(snapshot, people.name)
+
+      assert :ok = Rox.put(people, "escher", "loopy")
+      assert {:ok, "loopy"} = Rox.get(people, "escher")
+      assert :not_found = Rox.get(people_snap, "escher")
+
+      assert :ok = Rox.put(people, "goedel", "uncertain")
+      assert {:ok, "unsure"} = Rox.get(people_snap, "goedel")
+    end
+  end
+
   describe "Batch Operations" do
     test "puts and deletes", %{db: db, people: people} do
       assert :not_found = Rox.get(db, "batch_put_test")
