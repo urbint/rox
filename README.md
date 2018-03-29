@@ -9,7 +9,7 @@ Rustler (Rust) powered erlang NIFs for RocksDB
 ```ex
 def deps do
   [
-    {:rox, "~> 1.0"},
+    {:rox, "~> 2.0"},
   ]
 end
 ```
