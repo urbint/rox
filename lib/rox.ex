@@ -183,6 +183,16 @@ defmodule Rox do
     end
   end
 
+  @doc """
+  Lists the existing column family names of the database at the given path.
+
+  """
+  @spec list_cf(file_path, db_options) :: {:ok, Enum.t} | {:error, any}
+  def list_cf(path, opts \\ []) when is_binary(path) and is_list(opts) do
+    with {:ok, result} <- Native.list_cf(path, to_map(opts)) do
+      {:ok, result}
+    end
+  end
 
   @doc """
   Put a key/value pair into the specified database or column family.
