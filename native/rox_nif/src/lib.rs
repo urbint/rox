@@ -616,6 +616,23 @@ fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>
     Ok(resp)
 }
 
+fn list_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+    let path: &Path =
+        Path::new(args[0].decode()?);
+
+    let db_opts =
+        if args[1].map_size()? > 0 {
+            decode_db_options(env, args[1])?
+        } else {
+            Options::default()
+        };
+
+    let paths: Vec<String> = handle_error!(env, DB::list_cf(&db_opts, path));
+    let resp = (atoms::ok(), paths).encode(env);
+
+    Ok(resp)
+}
+
 fn cf_handle<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.db.read().unwrap();
@@ -897,6 +914,7 @@ rustler_export_nifs!(
     ("delete_cf", 4, delete_cf),
     ("count", 1, count),
     ("count_cf", 2, count_cf),
+    ("list_cf", 2, list_cf),
     ("iterate", 2, iterate),
     ("iterate_cf", 3, iterate_cf),
     ("iterator_next", 1, iterator_next),

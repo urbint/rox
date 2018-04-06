@@ -49,6 +49,14 @@ defmodule Rox.Native do
     end
   end
 
+  def list_cf(_, _) do
+    case :erlang.phash2(1, 1) do
+      0 -> raise "Nif not loaded"
+      1 -> {:ok, ""}
+      2 -> {:error, ""}
+    end
+  end
+
   def put(_, _, _, _) do
     case :erlang.phash2(1, 1) do
       0 -> raise "Nif not loaded"
