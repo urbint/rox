@@ -13,8 +13,10 @@ use rustler::resource::ResourceArc;
 
 use rustler::{Decoder, Encoder, Env, Error, NifResult, Term};
 
-use rocksdb::{ColumnFamily, DBCompressionType, DBIterator, Direction, IteratorMode, Options,
-              Snapshot, WriteBatch, WriteOptions, DB};
+use rocksdb::{
+    ColumnFamily, DBCompressionType, DBIterator, Direction, IteratorMode, Options, Snapshot,
+    WriteBatch, WriteOptions, DB,
+};
 use rustler::dynamic::TermType;
 use rustler::types::atom::Atom;
 use rustler::types::binary::{Binary, OwnedBinary};

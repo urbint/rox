@@ -1,4 +1,5 @@
-%{"benchfella": {:hex, :benchfella, "0.3.4", "41d2c017b361ece5225b5ba2e3b30ae53578c57c6ebc434417b4f1c2c94cf4f3", [:mix], [], "hexpm"},
+%{
+  "benchfella": {:hex, :benchfella, "0.3.4", "41d2c017b361ece5225b5ba2e3b30ae53578c57c6ebc434417b4f1c2c94cf4f3", [:mix], [], "hexpm"},
   "dialyxir": {:hex, :dialyxir, "0.5.0", "5bc543f9c28ecd51b99cc1a685a3c2a1a93216990347f259406a910cf048d1d7", [:mix], [], "hexpm"},
   "earmark": {:hex, :earmark, "1.2.2", "f718159d6b65068e8daeef709ccddae5f7fdc770707d82e7d126f584cd925b74", [:mix], [], "hexpm"},
   "erocksdb": {:hex, :erocksdb, "0.4.1", "59a3258b1460d0e64f7575d912d9af86fa5aa56729abff18e4d3e4fd4a5e01e0", [:rebar3], []},
@@ -6,4 +7,5 @@
   "faker": {:hex, :faker, "0.8.0", "91880d7aa0882ceca77849a28cecddaa337e274ac35197b65c7ad38cfa4517ab", [:mix], [], "hexpm"},
   "flow": {:hex, :flow, "0.12.0", "32c5a5f3ff6693e004b6c17a8c64dce2f8cdaf9564912d79427176013a586ab6", [:mix], [{:gen_stage, "~> 0.12.0", [hex: :gen_stage, repo: "hexpm", optional: false]}], "hexpm"},
   "gen_stage": {:hex, :gen_stage, "0.12.0", "74ec6f84ea0e0e81aa26b745870495094de1c59bfdbd012ae3103208ea124623", [:mix], [], "hexpm"},
-  "rustler": {:hex, :rustler, "0.10.1", "cedcce8b8960e5a8d528903891e8cc7f2f0306680a1c478455e3d8e572c65cc4", [:mix], [], "hexpm"}}
+  "rustler": {:git, "https://github.com/hansihe/rustler", "b6578ea3999fd42f377c2497d8fae0bd629b927d", [sparse: "rustler_mix"]},
+}
