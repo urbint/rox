@@ -23,24 +23,29 @@ defmodule Rox.Mixfile do
     [extra_applications: [:logger]]
   end
 
-  # Dependencies can be Hex packages:
-  #
-  #   {:mydep, "~> 0.3.0"}
-  #
-  # Or git/path repositories:
-  #
-  #   {:mydep, git: "https://github.com/elixir-lang/mydep.git", tag: "0.1.0"}
-  #
   # Type "mix help deps" for more examples and options
   defp deps do
     [
+      # Rust NIFs
       {:rustler, git: "https://github.com/hansihe/rustler", sparse: "rustler_mix"},
-      {:ex_doc, ">= 0.0.0", only: :dev},
-      {:benchfella, "~> 0.3", only: :dev},
+
+      # Doc generation
+      {:ex_doc, "~> 0.18", only: :dev},
+
+      # Benchmarking
+      {:benchfella, "~> 0.3.0", only: :dev},
+
+      # Generate fake data
       {:faker, "~> 0.7", only: :dev},
-      {:flow, "~> 0.11", only: :dev},
-      {:gen_stage, "~> 0.11", only: :dev},
-      {:dialyxir, "~> 0.5", only: :dev}
+
+      # Computational flows
+      {:flow, "~> 0.14", only: :dev},
+
+      # Producers and consumers
+      {:gen_stage, "~> 0.14", only: :dev},
+
+      # Dialyzer support
+      {:dialyxir, "~> 1.0.0-rc.1", only: :dev, runtime: false}
     ]
   end
 
