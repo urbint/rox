@@ -184,14 +184,14 @@ version = "0.1.0"
 dependencies = [
  "lazy_static 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocksdb 0.8.1 (git+https://github.com/urbint/rust-rocksdb.git)",
- "rustler 0.17.2-alpha.0 (git+https://github.com/hansihe/rustler?rev=b6578ea)",
- "rustler_codegen 0.17.1 (git+https://github.com/hansihe/rustler?rev=b6578ea)",
+ "rustler 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustler_codegen 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "rustler"
-version = "0.17.2-alpha.0"
-source = "git+https://github.com/hansihe/rustler?rev=b6578ea#b6578ea3999fd42f377c2497d8fae0bd629b927d"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "erlang_nif-sys 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -199,8 +199,8 @@ dependencies = [
 
 [[package]]
 name = "rustler_codegen"
-version = "0.17.1"
-source = "git+https://github.com/hansihe/rustler?rev=b6578ea#b6578ea3999fd42f377c2497d8fae0bd629b927d"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "heck 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -297,8 +297,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rayon 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "80e811e76f1dbf68abf87a759083d34600017fc4e10b6bd5ad84a700f9dba4b1"
 "checksum rayon-core 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9d24ad214285a7729b174ed6d3bcfcb80177807f959d95fafd5bfc5c4f201ac8"
 "checksum rocksdb 0.8.1 (git+https://github.com/urbint/rust-rocksdb.git)" = "<none>"
-"checksum rustler 0.17.2-alpha.0 (git+https://github.com/hansihe/rustler?rev=b6578ea)" = "<none>"
-"checksum rustler_codegen 0.17.1 (git+https://github.com/hansihe/rustler?rev=b6578ea)" = "<none>"
+"checksum rustler 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)" = "56c8f41f12f189bea1d04f188834f62ab58da6126f76edb67d2ef90070c469b2"
+"checksum rustler_codegen 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)" = "cf38a981e9ae5f9d7b326e4ebadcf51fb439a88173de75671ee8b97c8e5eb713"
 "checksum scopeguard 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "94258f53601af11e6a49f722422f6e3425c52b06245a5cf9bc09908b174f5e27"
 "checksum syn 0.11.11 (registry+https://github.com/rust-lang/crates.io-index)" = "d3b891b9015c88c576343b9b3e41c2c11a51c219ef067b264bd9c8aa9b441dad"
 "checksum synom 0.11.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a393066ed9010ebaed60b9eafa373d4b1baac186dd7e008555b0f702b51945b6"

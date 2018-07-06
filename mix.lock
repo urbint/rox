@@ -7,5 +7,5 @@
   "faker": {:hex, :faker, "0.8.0", "91880d7aa0882ceca77849a28cecddaa337e274ac35197b65c7ad38cfa4517ab", [:mix], [], "hexpm"},
   "flow": {:hex, :flow, "0.14.0", "a84a4afc8559e3eb9c3b73c7dd0b348817405f3208bb1a42cfea69a83ec17f35", [:mix], [{:gen_stage, "~> 0.14.0", [hex: :gen_stage, repo: "hexpm", optional: false]}], "hexpm"},
   "gen_stage": {:hex, :gen_stage, "0.14.0", "65ae78509f85b59d360690ce3378d5096c3130a0694bab95b0c4ae66f3008fad", [:mix], [], "hexpm"},
-  "rustler": {:git, "https://github.com/hansihe/rustler", "b6578ea3999fd42f377c2497d8fae0bd629b927d", [sparse: "rustler_mix"]},
+  "rustler": {:hex, :rustler, "0.18.0", "db4bd0c613d83a1badc31be90ddada6f9821de29e4afd15c53a5da61882e4f2d", [:mix], [], "hexpm"},
 }
