@@ -4,26 +4,23 @@ extern crate rustler;
 extern crate lazy_static;
 extern crate rocksdb;
 
-use std::path::Path;
-use std::ops::Deref;
 use std::io::Write;
-use std::sync::{RwLock,Arc};
+use std::ops::Deref;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 use rustler::resource::ResourceArc;
 
-use rustler::{
-    NifEnv, NifTerm, NifEncoder, NifResult,NifDecoder,NifError
-};
+use rustler::{Decoder, Encoder, Env, Error, NifResult, Term};
 
-use rustler::dynamic::TermType;
-use rustler::types::binary::{NifBinary,OwnedNifBinary};
-use rustler::types::atom::{NifAtom};
-use rustler::types::list::NifListIterator;
 use rocksdb::{
-    DB, IteratorMode, Options, Snapshot, DBCompressionType, WriteOptions,
-    ColumnFamily, Direction, DBIterator, WriteBatch
+    ColumnFamily, DBCompressionType, DBIterator, Direction, IteratorMode, Options, Snapshot,
+    WriteBatch, WriteOptions, DB,
 };
-
+use rustler::dynamic::TermType;
+use rustler::types::atom::Atom;
+use rustler::types::binary::{Binary, OwnedBinary};
+use rustler::types::list::ListIterator;
 
 mod atoms {
     rustler_atoms! {
@@ -169,7 +166,8 @@ mod atoms {
 struct SnapshotWrapper {
     pub snapshot: Option<Snapshot<'static>>,
 
-    #[allow(dead_code)] db: Arc<RwLock<DB>>
+    #[allow(dead_code)]
+    db: Arc<RwLock<DB>>,
 }
 
 unsafe impl Sync for SnapshotWrapper {}
@@ -186,21 +184,22 @@ impl Deref for SnapshotWrapper {
     type Target = Snapshot<'static>;
 
     fn deref(&self) -> &Self::Target {
-        self.snapshot.as_ref().expect(
-            "Invariant violation: Attempting to use a freed snapshot handle. Good luck.")
+        self.snapshot
+            .as_ref()
+            .expect("Invariant violation: Attempting to use a freed snapshot handle. Good luck.")
     }
 }
 
 impl Drop for SnapshotWrapper {
     fn drop(&mut self) {
-        let snapshot = std::mem::replace(&mut self.snapshot, None).expect(
-            "Invariant violation: Dropping a snapshot handle that's already been dropped.");
+        let snapshot = std::mem::replace(&mut self.snapshot, None)
+            .expect("Invariant violation: Dropping a snapshot handle that's already been dropped.");
         unsafe { shorten_snapshot(snapshot) };
     }
 }
 
 struct SnapshotHandle {
-    pub snapshot: Arc<SnapshotWrapper>
+    pub snapshot: Arc<SnapshotWrapper>,
 }
 
 unsafe impl Sync for SnapshotHandle {}
@@ -220,13 +219,13 @@ impl SnapshotHandle {
         // it'll be dropped on its own by the GC handling inside Rustler.
         let eternal_snapshot: Snapshot<'static> = unsafe { std::mem::transmute(snapshot) };
 
-        let wrapper = SnapshotWrapper{
+        let wrapper = SnapshotWrapper {
             snapshot: Some(eternal_snapshot),
-            db: db.deref().clone()
+            db: db.deref().clone(),
         };
 
         SnapshotHandle {
-            snapshot: Arc::new(wrapper)
+            snapshot: Arc::new(wrapper),
         }
     }
 }
@@ -234,9 +233,10 @@ impl SnapshotHandle {
 impl Deref for SnapshotHandle {
     type Target = SnapshotWrapper;
 
-    fn deref(&self) -> &Self::Target { self.snapshot.deref() }
+    fn deref(&self) -> &Self::Target {
+        self.snapshot.deref()
+    }
 }
-
 
 struct DBHandle {
     pub db: Arc<RwLock<DB>>,
@@ -245,7 +245,9 @@ struct DBHandle {
 impl Deref for DBHandle {
     type Target = Arc<RwLock<DB>>;
 
-    fn deref(&self) -> &Self::Target { &self.db }
+    fn deref(&self) -> &Self::Target {
+        &self.db
+    }
 }
 
 ///
@@ -260,16 +262,21 @@ enum DatabaseRef {
 }
 
 impl<'a> From<&'a Arc<RwLock<DB>>> for DatabaseRef {
-    fn from(db: &Arc<RwLock<DB>>) -> Self { DatabaseRef::DB(db.clone()) }
+    fn from(db: &Arc<RwLock<DB>>) -> Self {
+        DatabaseRef::DB(db.clone())
+    }
 }
 
 impl<'a> From<&'a Arc<SnapshotWrapper>> for DatabaseRef {
-    fn from(snapshot: &Arc<SnapshotWrapper>) -> Self { DatabaseRef::Snapshot(snapshot.clone()) }
+    fn from(snapshot: &Arc<SnapshotWrapper>) -> Self {
+        DatabaseRef::Snapshot(snapshot.clone())
+    }
 }
 
 struct CFHandle {
     pub cf: ColumnFamily,
-    #[allow(dead_code)] db: DatabaseRef,
+    #[allow(dead_code)]
+    db: DatabaseRef,
 }
 
 unsafe impl Sync for CFHandle {}
@@ -277,25 +284,45 @@ unsafe impl Send for CFHandle {}
 
 struct IteratorHandle {
     pub iter: RwLock<DBIterator>,
-    #[allow(dead_code)] db: DatabaseRef,
+    #[allow(dead_code)]
+    db: DatabaseRef,
 }
 
 unsafe impl Sync for IteratorHandle {}
 unsafe impl Send for IteratorHandle {}
 
-
 struct CompressionType {
-    pub raw: DBCompressionType
+    pub raw: DBCompressionType,
 }
-impl <'a> NifDecoder<'a> for CompressionType {
-    fn decode(term: NifTerm<'a>) -> NifResult<Self> {
-        if atoms::none() == term { Ok(CompressionType{raw: DBCompressionType::None}) }
-        else if atoms::snappy()  == term { Ok(CompressionType{raw: DBCompressionType::Snappy}) }
-        else if atoms::zlib()    == term { Ok(CompressionType{raw: DBCompressionType::Zlib}) }
-        else if atoms::bzip2()   == term { Ok(CompressionType{raw: DBCompressionType::Bz2}) }
-        else if atoms::lz4()     == term { Ok(CompressionType{raw: DBCompressionType::Lz4}) }
-        else if atoms::lz4h()    == term { Ok(CompressionType{raw: DBCompressionType::Lz4hc}) }
-        else { Err(NifError::BadArg) }
+impl<'a> Decoder<'a> for CompressionType {
+    fn decode(term: Term<'a>) -> NifResult<Self> {
+        if atoms::none() == term {
+            Ok(CompressionType {
+                raw: DBCompressionType::None,
+            })
+        } else if atoms::snappy() == term {
+            Ok(CompressionType {
+                raw: DBCompressionType::Snappy,
+            })
+        } else if atoms::zlib() == term {
+            Ok(CompressionType {
+                raw: DBCompressionType::Zlib,
+            })
+        } else if atoms::bzip2() == term {
+            Ok(CompressionType {
+                raw: DBCompressionType::Bz2,
+            })
+        } else if atoms::lz4() == term {
+            Ok(CompressionType {
+                raw: DBCompressionType::Lz4,
+            })
+        } else if atoms::lz4h() == term {
+            Ok(CompressionType {
+                raw: DBCompressionType::Lz4hc,
+            })
+        } else {
+            Err(Error::BadArg)
+        }
     }
 }
 
@@ -306,28 +333,30 @@ impl Into<DBCompressionType> for CompressionType {
 }
 
 enum BatchOperation<'a> {
-    Put(&'a[u8], &'a[u8]),
-    PutCf(ColumnFamily, &'a[u8], &'a[u8]),
-    Delete(&'a[u8]),
-    DeleteCf(ColumnFamily, &'a[u8]),
+    Put(&'a [u8], &'a [u8]),
+    PutCf(ColumnFamily, &'a [u8], &'a [u8]),
+    Delete(&'a [u8]),
+    DeleteCf(ColumnFamily, &'a [u8]),
 }
 
-impl <'a> NifDecoder<'a> for BatchOperation<'a> {
-    fn decode(term: NifTerm<'a>) -> NifResult<Self> {
-        let (operation, details): (NifTerm, NifTerm) = term.decode()?;
+impl<'a> Decoder<'a> for BatchOperation<'a> {
+    fn decode(term: Term<'a>) -> NifResult<Self> {
+        let (operation, details): (Term, Term) = term.decode()?;
         if atoms::put() == operation {
-            let (key, val): (NifBinary, NifBinary) = details.decode()?;
+            let (key, val): (Binary, Binary) = details.decode()?;
             Ok(BatchOperation::Put(key.as_slice(), val.as_slice()))
         } else if atoms::put_cf() == operation {
-            let (cf, key, val): (ResourceArc<CFHandle>, NifBinary, NifBinary) = details.decode()?;
+            let (cf, key, val): (ResourceArc<CFHandle>, Binary, Binary) = details.decode()?;
             Ok(BatchOperation::PutCf(cf.cf, key.as_slice(), val.as_slice()))
         } else if atoms::delete() == operation {
-            let key: NifBinary = details.decode()?;
+            let key: Binary = details.decode()?;
             Ok(BatchOperation::Delete(key.as_slice()))
         } else if atoms::delete_cf() == operation {
-            let (cf, key): (ResourceArc<CFHandle>, NifBinary) = details.decode()?;
+            let (cf, key): (ResourceArc<CFHandle>, Binary) = details.decode()?;
             Ok(BatchOperation::DeleteCf(cf.cf, key.as_slice()))
-        } else { Err(NifError::BadArg) }
+        } else {
+            Err(Error::BadArg)
+        }
     }
 }
 
@@ -335,12 +364,12 @@ macro_rules! handle_error {
     ($env:expr, $e:expr) => {
         match $e {
             Ok(inner) => inner,
-            Err(err) => return Ok((atoms::error(), err.to_string().encode($env)).encode($env))
+            Err(err) => return Ok((atoms::error(), err.to_string().encode($env)).encode($env)),
         }
-    }
+    };
 }
 
-fn decode_write_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<WriteOptions> {
+fn decode_write_options<'a>(env: Env<'a>, arg: Term<'a>) -> NifResult<WriteOptions> {
     let mut opts = WriteOptions::new();
 
     if let Ok(sync) = arg.map_get(atoms::sync().to_term(env)) {
@@ -354,7 +383,7 @@ fn decode_write_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Writ
     Ok(opts)
 }
 
-// fn decode_read_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<ReadOptions> {
+// fn decode_read_options<'a>(env: Env<'a>, arg: Term<'a>) -> NifResult<ReadOptions> {
 //     let mut opts = ReadOptions::default();
 
 //     if let Ok(fill_cache) = arg.map_get(atoms::fill_cache().to_term(env)) {
@@ -370,14 +399,16 @@ fn decode_write_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Writ
 //     Ok(opts)
 // }
 
-fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options> {
+fn decode_db_options<'a>(env: Env<'a>, arg: Term<'a>) -> NifResult<Options> {
     let mut opts = Options::default();
 
     if let Ok(count) = arg.map_get(atoms::total_threads().to_term(env)) {
         opts.increase_parallelism(count.decode()?);
     }
 
-    if let Ok(memtable_budget) = arg.map_get(atoms::optimize_level_type_compaction_memtable_memory_budget().to_term(env)) {
+    if let Ok(memtable_budget) =
+        arg.map_get(atoms::optimize_level_type_compaction_memtable_memory_budget().to_term(env))
+    {
         let i_size: u64 = memtable_budget.decode()?;
         opts.optimize_level_style_compaction(i_size as usize);
     }
@@ -484,90 +515,91 @@ fn decode_db_options<'a>(env: NifEnv<'a>, arg: NifTerm<'a>) -> NifResult<Options
         opts.set_num_levels(num_levels.decode()?);
     }
 
-    if let Ok(enabled) =
-        arg.map_get(atoms::use_direct_io_for_flush_and_compaction().to_term(env)) {
-            opts.set_use_direct_io_for_flush_and_compaction(enabled.decode()?);
-        }
+    if let Ok(enabled) = arg.map_get(atoms::use_direct_io_for_flush_and_compaction().to_term(env)) {
+        opts.set_use_direct_io_for_flush_and_compaction(enabled.decode()?);
+    }
 
     Ok(opts)
 }
 
-fn decode_iterator_mode<'a>(arg: NifTerm<'a>) -> NifResult<IteratorMode<'a>> {
+fn decode_iterator_mode<'a>(arg: Term<'a>) -> NifResult<IteratorMode<'a>> {
     match arg.get_type() {
         TermType::Atom => {
-            let atom: NifAtom = arg.decode()?;
+            let atom: Atom = arg.decode()?;
 
             if atom == atoms::start() {
                 Ok(IteratorMode::Start)
             } else if atom == atoms::end() {
                 Ok(IteratorMode::End)
             } else {
-                Err(NifError::BadArg)
+                Err(Error::BadArg)
             }
         }
 
         TermType::Tuple => {
-            let (atom_from, key, atom_dir): (NifAtom, NifBinary, NifAtom) = arg.decode()?;
+            let (atom_from, key, atom_dir): (Atom, Binary, Atom) = arg.decode()?;
 
-            if atom_from == atoms::from() && (atom_dir == atoms::forward() || atom_dir == atoms::reverse()) {
-                let dir: Direction =
-                    if atom_dir == atoms::forward() { Direction::Forward } else { Direction::Reverse };
+            if atom_from == atoms::from()
+                && (atom_dir == atoms::forward() || atom_dir == atoms::reverse())
+            {
+                let dir: Direction = if atom_dir == atoms::forward() {
+                    Direction::Forward
+                } else {
+                    Direction::Reverse
+                };
                 Ok(IteratorMode::From(key.as_slice(), dir))
-
-            } else{
-                Err(NifError::BadArg)
+            } else {
+                Err(Error::BadArg)
             }
         }
 
-        _ => Err(NifError::BadArg)
+        _ => Err(Error::BadArg),
     }
 }
 
-fn open<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let path: &Path =
-        Path::new(args[0].decode()?);
+fn open<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let path: &Path = Path::new(args[0].decode()?);
 
-    let db_opts =
-        if args[1].map_size()? > 0 {
-            decode_db_options(env, args[1])?
-        } else {
-            Options::default()
-        };
+    let db_opts = if args[1].map_size()? > 0 {
+        decode_db_options(env, args[1])?
+    } else {
+        Options::default()
+    };
 
-    let cf: Vec<&str> =
-        if args[2].list_length()? == 0 {
-            vec![]
-        } else {
-            let iter: NifListIterator = args[2].decode()?;
-            let result: Vec<&str> =
-                try!(iter
-                .map(|x| x.decode())
-                .collect::<NifResult<Vec<&str>>>());
+    let cf: Vec<&str> = if args[2].list_length()? == 0 {
+        vec![]
+    } else {
+        let iter: ListIterator = args[2].decode()?;
+        let result: Vec<&str> = try!(iter.map(|x| x.decode()).collect::<NifResult<Vec<&str>>>());
 
-            result
-        };
+        result
+    };
 
     let db: DB = handle_error!(env, DB::open_cf(&db_opts, path, &cf));
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(DBHandle{
+    let resp = (
+        atoms::ok(),
+        ResourceArc::new(DBHandle {
             db: Arc::new(RwLock::new(db)),
-        })).encode(env);
+        }),
+    ).encode(env);
 
     Ok(resp)
 }
 
-fn create_snapshot<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn create_snapshot<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(SnapshotHandle::new(db_handle))).encode(env);
+    let resp = (
+        atoms::ok(),
+        ResourceArc::new(SnapshotHandle::new(db_handle)),
+    ).encode(env);
 
     Ok(resp)
 }
 
-fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn count<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
 
@@ -575,57 +607,63 @@ fn count<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 
     let count = iterator.count();
 
-
     Ok((count as u64).encode(env))
 }
 
-fn count_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn count_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db_handle = db_arc.deref();
 
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
 
-
-    let iterator = handle_error!(env, db_handle.db.read().unwrap().iterator_cf(cf, IteratorMode::Start));
+    let iterator = handle_error!(
+        env,
+        db_handle
+            .db
+            .read()
+            .unwrap()
+            .iterator_cf(cf, IteratorMode::Start)
+    );
 
     let count = iterator.count();
-
 
     Ok((count as u64).encode(env))
 }
 
-fn create_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn create_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let mut db = db_arc.db.write().unwrap();
 
     let name: &str = args[1].decode()?;
     let has_db_opts = args[2].map_size()? > 0;
-    let opts =
-        if has_db_opts { decode_db_options(env, args[2])? } else { Options::default() };
-
+    let opts = if has_db_opts {
+        decode_db_options(env, args[2])?
+    } else {
+        Options::default()
+    };
 
     let cf = handle_error!(env, db.create_cf(name, &opts));
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(CFHandle{
+    let resp = (
+        atoms::ok(),
+        ResourceArc::new(CFHandle {
             cf: cf,
-            db: DatabaseRef::from(&db_arc.db)
-        })).encode(env);
+            db: DatabaseRef::from(&db_arc.db),
+        }),
+    ).encode(env);
 
     Ok(resp)
 }
 
-fn list_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let path: &Path =
-        Path::new(args[0].decode()?);
+fn list_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let path: &Path = Path::new(args[0].decode()?);
 
-    let db_opts =
-        if args[1].map_size()? > 0 {
-            decode_db_options(env, args[1])?
-        } else {
-            Options::default()
-        };
+    let db_opts = if args[1].map_size()? > 0 {
+        decode_db_options(env, args[1])?
+    } else {
+        Options::default()
+    };
 
     let paths: Vec<String> = handle_error!(env, DB::list_cf(&db_opts, path));
     let resp = (atoms::ok(), paths).encode(env);
@@ -633,121 +671,117 @@ fn list_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> 
     Ok(resp)
 }
 
-fn cf_handle<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn cf_handle<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.db.read().unwrap();
 
     let name: &str = args[1].decode()?;
 
     match db.cf_handle(name) {
-        Some(cf) => Ok((atoms::ok(), ResourceArc::new(CFHandle{
-            cf: cf,
-            db: DatabaseRef::from(&db_arc.db),
-        })).encode(env)),
-        None => Ok((atoms::error(), format!("Could not find ColumnFamily named {}", name)).encode(env))
+        Some(cf) => Ok((
+            atoms::ok(),
+            ResourceArc::new(CFHandle {
+                cf: cf,
+                db: DatabaseRef::from(&db_arc.db),
+            }),
+        ).encode(env)),
+        None => Ok((
+            atoms::error(),
+            format!("Could not find ColumnFamily named {}", name),
+        ).encode(env)),
     }
 }
 
-fn put<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn put<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.deref().db.write().unwrap();
 
-    let key: NifBinary = args[1].decode()?;
-    let val: NifBinary = args[2].decode()?;
+    let key: Binary = args[1].decode()?;
+    let val: Binary = args[2].decode()?;
 
-    let resp =
-        if args[3].map_size()? > 0 {
-            let write_opts = decode_write_options(env, args[2])?;
-            db.put_opt(key.as_slice(), val.as_slice(), &write_opts)
-        } else {
-            db.put(key.as_slice(), val.as_slice())
-        };
-
+    let resp = if args[3].map_size()? > 0 {
+        let write_opts = decode_write_options(env, args[2])?;
+        db.put_opt(key.as_slice(), val.as_slice(), &write_opts)
+    } else {
+        db.put(key.as_slice(), val.as_slice())
+    };
 
     handle_error!(env, resp);
-
 
     Ok(atoms::ok().encode(env))
 }
 
-fn put_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.deref().db.write().unwrap();
-
-    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
-    let cf = cf_arc.deref().cf;
-
-    let key: NifBinary = args[2].decode()?;
-    let val: NifBinary = args[3].decode()?;
-
-    let resp =
-        if args[4].map_size()? > 0 {
-            let write_opts = decode_write_options(env, args[2])?;
-            db.put_cf_opt(cf, key.as_slice(), val.as_slice(), &write_opts)
-        } else {
-            db.put_cf(cf, key.as_slice(), val.as_slice())
-        };
-
-
-    handle_error!(env, resp);
-
-
-    Ok(atoms::ok().encode(env))
-}
-
-fn delete<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
-    let db = db_arc.deref().db.write().unwrap();
-
-    let key: NifBinary = args[1].decode()?;
-
-    let resp =
-        if args[2].map_size()? > 0 {
-            let write_opts = decode_write_options(env, args[2])?;
-            db.delete_opt(key.as_slice(), &write_opts)
-        } else {
-            db.delete(key.as_slice())
-        };
-
-
-    handle_error!(env, resp);
-
-
-    Ok(atoms::ok().encode(env))
-}
-
-fn delete_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn put_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
     let db = db_arc.deref().db.write().unwrap();
 
     let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
     let cf = cf_arc.deref().cf;
 
-    let key: NifBinary = args[2].decode()?;
+    let key: Binary = args[2].decode()?;
+    let val: Binary = args[3].decode()?;
 
-    let resp =
-        if args[3].map_size()? > 0 {
-            let write_opts = decode_write_options(env, args[3])?;
-            db.delete_cf_opt(cf, key.as_slice(), &write_opts)
-        } else {
-            db.delete_cf(cf, key.as_slice() )
-        };
-
+    let resp = if args[4].map_size()? > 0 {
+        let write_opts = decode_write_options(env, args[2])?;
+        db.put_cf_opt(cf, key.as_slice(), val.as_slice(), &write_opts)
+    } else {
+        db.put_cf(cf, key.as_slice(), val.as_slice())
+    };
 
     handle_error!(env, resp);
-
 
     Ok(atoms::ok().encode(env))
 }
 
-fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let key = args[1].decode::<NifBinary>()?.as_slice();
+fn delete<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.write().unwrap();
 
-    let resp =
-        args[0].decode::<ResourceArc<DBHandle>>().map(|db_arc| {
+    let key: Binary = args[1].decode()?;
+
+    let resp = if args[2].map_size()? > 0 {
+        let write_opts = decode_write_options(env, args[2])?;
+        db.delete_opt(key.as_slice(), &write_opts)
+    } else {
+        db.delete(key.as_slice())
+    };
+
+    handle_error!(env, resp);
+
+    Ok(atoms::ok().encode(env))
+}
+
+fn delete_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let db_arc: ResourceArc<DBHandle> = args[0].decode()?;
+    let db = db_arc.deref().db.write().unwrap();
+
+    let cf_arc: ResourceArc<CFHandle> = args[1].decode()?;
+    let cf = cf_arc.deref().cf;
+
+    let key: Binary = args[2].decode()?;
+
+    let resp = if args[3].map_size()? > 0 {
+        let write_opts = decode_write_options(env, args[3])?;
+        db.delete_cf_opt(cf, key.as_slice(), &write_opts)
+    } else {
+        db.delete_cf(cf, key.as_slice())
+    };
+
+    handle_error!(env, resp);
+
+    Ok(atoms::ok().encode(env))
+}
+
+fn get<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let key = args[1].decode::<Binary>()?.as_slice();
+
+    let resp = args[0]
+        .decode::<ResourceArc<DBHandle>>()
+        .map(|db_arc| {
             let db = db_arc.db.read().unwrap();
             db.get(key)
-        }).or_else(|_| {
+        })
+        .or_else(|_| {
             let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
             Ok(snapshot_arc.get(key))
         })?;
@@ -756,24 +790,26 @@ fn get<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 
     match val_option {
         Some(val) => {
-            let mut bin = OwnedNifBinary::new(val.len()).unwrap();
+            let mut bin = OwnedBinary::new(val.len()).unwrap();
             bin.as_mut_slice().write(&val).unwrap();
 
             Ok((atoms::ok(), bin.release(env).encode(env)).encode(env))
         }
-        None => Ok(atoms::not_found().encode(env))
+        None => Ok(atoms::not_found().encode(env)),
     }
 }
 
-fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn get_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let cf = args[1].decode::<ResourceArc<CFHandle>>()?.cf;
-    let key = args[2].decode::<NifBinary>()?.as_slice();
+    let key = args[2].decode::<Binary>()?.as_slice();
 
-    let resp =
-        args[0].decode::<ResourceArc<DBHandle>>().map(|db_arc| {
+    let resp = args[0]
+        .decode::<ResourceArc<DBHandle>>()
+        .map(|db_arc| {
             let db = db_arc.db.read().unwrap();
             db.get_cf(cf, key)
-        }).or_else(|_| {
+        })
+        .or_else(|_| {
             let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
             Ok(snapshot_arc.get_cf(cf, key))
         })?;
@@ -782,91 +818,109 @@ fn get_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
 
     match val_option {
         Some(val) => {
-            let mut bin = OwnedNifBinary::new(val.len()).unwrap();
+            let mut bin = OwnedBinary::new(val.len()).unwrap();
             bin.as_mut_slice().write(&val).unwrap();
 
             Ok((atoms::ok(), bin.release(env).encode(env)).encode(env))
         }
-        None => Ok(atoms::not_found().encode(env))
+        None => Ok(atoms::not_found().encode(env)),
     }
 }
 
-fn iterate<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let (iter, db_ref) =
-        args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
+fn iterate<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let (iter, db_ref) = args[0]
+        .decode::<ResourceArc<DBHandle>>()
+        .and_then(|db_arc| {
             let db = db_arc.db.read().unwrap();
             Ok((
                 db.iterator(decode_iterator_mode(args[1])?),
-                DatabaseRef::from(&db_arc.db)
+                DatabaseRef::from(&db_arc.db),
             ))
-        }).or_else(|_| {
+        })
+        .or_else(|_| {
             let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
             Ok((
-                snapshot_arc.snapshot.snapshot.as_ref().unwrap()
+                snapshot_arc
+                    .snapshot
+                    .snapshot
+                    .as_ref()
+                    .unwrap()
                     .iterator(decode_iterator_mode(args[1])?),
-                DatabaseRef::from(&snapshot_arc.snapshot)
+                DatabaseRef::from(&snapshot_arc.snapshot),
             ))
         })?;
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(IteratorHandle{
+    let resp = (
+        atoms::ok(),
+        ResourceArc::new(IteratorHandle {
             iter: RwLock::new(iter),
             db: db_ref,
-        })).encode(env);
+        }),
+    ).encode(env);
 
     Ok(resp)
 }
 
-fn iterate_cf<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn iterate_cf<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let cf = args[1].decode::<ResourceArc<CFHandle>>()?.cf;
 
-    let (iter_res, db_ref) =
-        args[0].decode::<ResourceArc<DBHandle>>().and_then(|db_arc| {
+    let (iter_res, db_ref) = args[0]
+        .decode::<ResourceArc<DBHandle>>()
+        .and_then(|db_arc| {
             let db = db_arc.db.read().unwrap();
             Ok((
                 db.iterator_cf(cf, decode_iterator_mode(args[2])?),
-                DatabaseRef::from(&db_arc.db)
+                DatabaseRef::from(&db_arc.db),
             ))
-        }).or_else(|_| {
+        })
+        .or_else(|_| {
             let snapshot_arc = args[0].decode::<ResourceArc<SnapshotHandle>>()?;
             Ok((
-                snapshot_arc.snapshot.snapshot.as_ref().unwrap()
+                snapshot_arc
+                    .snapshot
+                    .snapshot
+                    .as_ref()
+                    .unwrap()
                     .iterator_cf(cf, decode_iterator_mode(args[2])?),
-                DatabaseRef::from(&snapshot_arc.snapshot)
+                DatabaseRef::from(&snapshot_arc.snapshot),
             ))
         })?;
 
     let iter = handle_error!(env, iter_res);
 
-    let resp =
-        (atoms::ok(), ResourceArc::new(IteratorHandle{
+    let resp = (
+        atoms::ok(),
+        ResourceArc::new(IteratorHandle {
             iter: RwLock::new(iter),
             db: db_ref,
-        })).encode(env);
+        }),
+    ).encode(env);
 
     Ok(resp)
 }
 
-fn iterator_next<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn iterator_next<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let iter_arc: ResourceArc<IteratorHandle> = args[0].decode()?;
     let mut iter = iter_arc.iter.write().unwrap();
 
     match iter.next() {
         None => Ok(atoms::done().encode(env)),
         Some((key, val)) => {
-
-            let mut enc_key = OwnedNifBinary::new(key.len()).unwrap();
+            let mut enc_key = OwnedBinary::new(key.len()).unwrap();
             enc_key.as_mut_slice().write(&key).unwrap();
 
-            let mut enc_val = OwnedNifBinary::new(val.len()).unwrap();
+            let mut enc_val = OwnedBinary::new(val.len()).unwrap();
             enc_val.as_mut_slice().write(&val).unwrap();
 
-            Ok((enc_key.release(env).encode(env), enc_val.release(env).encode(env)).encode(env))
+            Ok((
+                enc_key.release(env).encode(env),
+                enc_val.release(env).encode(env),
+            ).encode(env))
         }
     }
 }
 
-fn iterator_reset<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
+fn iterator_reset<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
     let iter_arc: ResourceArc<IteratorHandle> = args[0].decode()?;
     let mut iter = iter_arc.iter.write().unwrap();
 
@@ -877,12 +931,13 @@ fn iterator_reset<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTer
     Ok(atoms::ok().encode(env))
 }
 
-fn batch_write<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'a>> {
-    let ops_iter: NifListIterator = args[0].decode()?;
-    let ops: Vec<BatchOperation> =
-        try!(ops_iter
-             .map(|x| x.decode())
-             .collect::<NifResult<Vec<BatchOperation>>>());
+fn batch_write<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
+    let ops_iter: ListIterator = args[0].decode()?;
+    let ops: Vec<BatchOperation> = try!(
+        ops_iter
+            .map(|x| x.decode())
+            .collect::<NifResult<Vec<BatchOperation>>>()
+    );
 
     let db_arc: ResourceArc<DBHandle> = args[1].decode()?;
     let db = db_arc.db.write().unwrap();
@@ -893,7 +948,7 @@ fn batch_write<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'
             BatchOperation::Put(key, val) => batch.put(key, val).unwrap(),
             BatchOperation::PutCf(cf, key, val) => batch.put_cf(cf, key, val).unwrap(),
             BatchOperation::Delete(key) => batch.delete(key).unwrap(),
-            BatchOperation::DeleteCf(cf, key) => batch.delete_cf(cf, key).unwrap()
+            BatchOperation::DeleteCf(cf, key) => batch.delete_cf(cf, key).unwrap(),
         }
     }
 
@@ -901,31 +956,32 @@ fn batch_write<'a>(env: NifEnv<'a>, args: &[NifTerm<'a>]) -> NifResult<NifTerm<'
     Ok(atoms::ok().encode(env))
 }
 
-
 rustler_export_nifs!(
     "Elixir.Rox.Native",
-    [("open", 3, open),
-    ("create_snapshot", 1, create_snapshot),
-    ("create_cf", 3, create_cf),
-    ("cf_handle", 2, cf_handle),
-    ("put", 4, put),
-    ("put_cf", 5, put_cf),
-    ("delete", 3, delete),
-    ("delete_cf", 4, delete_cf),
-    ("count", 1, count),
-    ("count_cf", 2, count_cf),
-    ("list_cf", 2, list_cf),
-    ("iterate", 2, iterate),
-    ("iterate_cf", 3, iterate_cf),
-    ("iterator_next", 1, iterator_next),
-    ("iterator_reset", 2, iterator_reset),
-    ("get", 3, get),
-    ("get_cf", 4, get_cf),
-    ("batch_write", 2, batch_write)],
+    [
+        ("open", 3, open),
+        ("create_snapshot", 1, create_snapshot),
+        ("create_cf", 3, create_cf),
+        ("cf_handle", 2, cf_handle),
+        ("put", 4, put),
+        ("put_cf", 5, put_cf),
+        ("delete", 3, delete),
+        ("delete_cf", 4, delete_cf),
+        ("count", 1, count),
+        ("count_cf", 2, count_cf),
+        ("list_cf", 2, list_cf),
+        ("iterate", 2, iterate),
+        ("iterate_cf", 3, iterate_cf),
+        ("iterator_next", 1, iterator_next),
+        ("iterator_reset", 2, iterator_reset),
+        ("get", 3, get),
+        ("get_cf", 4, get_cf),
+        ("batch_write", 2, batch_write),
+    ],
     Some(on_load)
 );
 
-fn on_load<'a>(env: NifEnv<'a>, _load_info: NifTerm<'a>) -> bool {
+fn on_load<'a>(env: Env<'a>, _load_info: Term<'a>) -> bool {
     resource_struct_init!(DBHandle, env);
     resource_struct_init!(CFHandle, env);
     resource_struct_init!(IteratorHandle, env);

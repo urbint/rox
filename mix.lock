@@ -1,9 +1,11 @@
-%{"benchfella": {:hex, :benchfella, "0.3.4", "41d2c017b361ece5225b5ba2e3b30ae53578c57c6ebc434417b4f1c2c94cf4f3", [:mix], [], "hexpm"},
-  "dialyxir": {:hex, :dialyxir, "0.5.0", "5bc543f9c28ecd51b99cc1a685a3c2a1a93216990347f259406a910cf048d1d7", [:mix], [], "hexpm"},
-  "earmark": {:hex, :earmark, "1.2.2", "f718159d6b65068e8daeef709ccddae5f7fdc770707d82e7d126f584cd925b74", [:mix], [], "hexpm"},
+%{
+  "benchfella": {:hex, :benchfella, "0.3.4", "41d2c017b361ece5225b5ba2e3b30ae53578c57c6ebc434417b4f1c2c94cf4f3", [:mix], [], "hexpm"},
+  "dialyxir": {:hex, :dialyxir, "1.0.0-rc.2", "1e68d42870c50dac013e8184254f232c32fa4164a4cdc001d723389cdee27b35", [:mix], [], "hexpm"},
+  "earmark": {:hex, :earmark, "1.2.5", "4d21980d5d2862a2e13ec3c49ad9ad783ffc7ca5769cf6ff891a4553fbaae761", [:mix], [], "hexpm"},
   "erocksdb": {:hex, :erocksdb, "0.4.1", "59a3258b1460d0e64f7575d912d9af86fa5aa56729abff18e4d3e4fd4a5e01e0", [:rebar3], []},
-  "ex_doc": {:hex, :ex_doc, "0.16.2", "3b3e210ebcd85a7c76b4e73f85c5640c011d2a0b2f06dcdf5acdb2ae904e5084", [:mix], [{:earmark, "~> 1.1", [hex: :earmark, repo: "hexpm", optional: false]}], "hexpm"},
+  "ex_doc": {:hex, :ex_doc, "0.18.3", "f4b0e4a2ec6f333dccf761838a4b253d75e11f714b85ae271c9ae361367897b7", [:mix], [{:earmark, "~> 1.1", [hex: :earmark, repo: "hexpm", optional: false]}], "hexpm"},
   "faker": {:hex, :faker, "0.8.0", "91880d7aa0882ceca77849a28cecddaa337e274ac35197b65c7ad38cfa4517ab", [:mix], [], "hexpm"},
-  "flow": {:hex, :flow, "0.12.0", "32c5a5f3ff6693e004b6c17a8c64dce2f8cdaf9564912d79427176013a586ab6", [:mix], [{:gen_stage, "~> 0.12.0", [hex: :gen_stage, repo: "hexpm", optional: false]}], "hexpm"},
-  "gen_stage": {:hex, :gen_stage, "0.12.0", "74ec6f84ea0e0e81aa26b745870495094de1c59bfdbd012ae3103208ea124623", [:mix], [], "hexpm"},
-  "rustler": {:hex, :rustler, "0.10.1", "cedcce8b8960e5a8d528903891e8cc7f2f0306680a1c478455e3d8e572c65cc4", [:mix], [], "hexpm"}}
+  "flow": {:hex, :flow, "0.14.0", "a84a4afc8559e3eb9c3b73c7dd0b348817405f3208bb1a42cfea69a83ec17f35", [:mix], [{:gen_stage, "~> 0.14.0", [hex: :gen_stage, repo: "hexpm", optional: false]}], "hexpm"},
+  "gen_stage": {:hex, :gen_stage, "0.14.0", "65ae78509f85b59d360690ce3378d5096c3130a0694bab95b0c4ae66f3008fad", [:mix], [], "hexpm"},
+  "rustler": {:hex, :rustler, "0.18.0", "db4bd0c613d83a1badc31be90ddada6f9821de29e4afd15c53a5da61882e4f2d", [:mix], [], "hexpm"},
+}
