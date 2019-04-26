@@ -1,3 +1,16 @@
+2.3.0 / 2019-04-26
+==================
+
+  * deps: Add OTP 21.0 Support
+  * deps(): pin rustler to 0.18
+  * deps(): update deps to newer versions
+  * deps(): pin current working dependencies in rustler
+  * deps(): update rustler
+  * refactor(): update to the newest rustler types
+  * choir(): apply rustfmt
+  * feat: added list_cf/2
+  * docs: update installation documentation to target rox ~> 2.0
+
 2.2.1 / 2018-01-17
 ==================
 

@@ -4,7 +4,7 @@ defmodule Rox.Mixfile do
   def project do
     [
       app: :rox,
-      version: "2.2.1",
+      version: "2.3.0",
       elixir: "~> 1.4",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
@@ -79,7 +79,7 @@ defmodule Rox.Mixfile do
         "History.md",
         "LICENSE"
       ],
-      maintainers: ["Ryan Schmukler"],
+      maintainers: ["Griffin Smith"],
       licenses: ["MIT"],
       links: %{"GitHub" => "https://github.com/urbint/rox"}
     ]
