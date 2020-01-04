@@ -9,7 +9,7 @@ path = "src/lib.rs"
 crate-type = ["dylib"]
 
 [dependencies]
-rustler = "0.18"
-rustler_codegen = "0.18"
+rustler = "0.21"
+rustler_codegen = "0.21"
 rocksdb = { git = "https://github.com/urbint/rust-rocksdb.git" }
 lazy_static = "1.0"
